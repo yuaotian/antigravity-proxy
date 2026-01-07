@@ -38,7 +38,7 @@ namespace Network {
             int sentBytes = send(sock, requestStr.c_str(), (int)requestStr.length(), 0);
             if (sentBytes != (int)requestStr.length()) {
                 int err = WSAGetLastError();
-                Core::Logger::Error("HTTP CONNECT: Failed to send request, WSAError=" + std::to_string(err));
+                Core::Logger::Error("HTTP CONNECT: 发送请求失败, WSA错误码=" + std::to_string(err));
                 return false;
             }
             
@@ -53,7 +53,7 @@ namespace Network {
                 int recvBytes = recv(sock, buffer + totalReceived, 1, 0); // 逐字节接收以便精确检测边界
                 if (recvBytes <= 0) {
                     int err = WSAGetLastError();
-                    Core::Logger::Error("HTTP CONNECT: Failed to receive response, WSAError=" + std::to_string(err));
+                    Core::Logger::Error("HTTP CONNECT: 接收响应失败, WSA错误码=" + std::to_string(err));
                     return false;
                 }
                 totalReceived += recvBytes;
@@ -68,7 +68,7 @@ namespace Network {
             }
             
             if (!headerComplete) {
-                Core::Logger::Error("HTTP CONNECT: Response header too long or incomplete");
+                Core::Logger::Error("HTTP CONNECT: 响应头过长或不完整");
                 return false;
             }
             
@@ -79,18 +79,18 @@ namespace Network {
             // 期望格式: HTTP/1.x 200 ...
             int statusCode = ParseStatusCode(response);
             if (statusCode == -1) {
-                Core::Logger::Error("HTTP CONNECT: Failed to parse response status");
-                Core::Logger::Error("HTTP CONNECT: Response was: " + response.substr(0, 100));
+                Core::Logger::Error("HTTP CONNECT: 解析响应状态码失败");
+                Core::Logger::Error("HTTP CONNECT: 响应内容: " + response.substr(0, 100));
                 return false;
             }
             
             if (statusCode != 200) {
-                Core::Logger::Error("HTTP CONNECT: Proxy returned status " + std::to_string(statusCode));
-                Core::Logger::Error("HTTP CONNECT: Response was: " + response.substr(0, 100));
+                Core::Logger::Error("HTTP CONNECT: 代理返回状态码 " + std::to_string(statusCode));
+                Core::Logger::Error("HTTP CONNECT: 响应内容: " + response.substr(0, 100));
                 return false;
             }
             
-            Core::Logger::Info("HTTP CONNECT: Tunnel established to " + targetHost + ":" + std::to_string(targetPort));
+            Core::Logger::Info("HTTP CONNECT: 隧道建立成功 目标: " + targetHost + ":" + std::to_string(targetPort));
             return true;
         }
         

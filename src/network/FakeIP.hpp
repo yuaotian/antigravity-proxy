@@ -45,7 +45,7 @@ namespace Network {
             m_ipToDomain[ip] = domain;
             m_domainToIp[domain] = ip;
             
-            Core::Logger::Info("FakeIP: Allocated " + IpToString(htonl(ip)) + " for " + domain);
+            Core::Logger::Info("FakeIP: 已分配 " + IpToString(htonl(ip)) + " 给域名 " + domain);
             return htonl(ip); // 返回网络字节序
         }
         

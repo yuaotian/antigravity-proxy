@@ -129,7 +129,7 @@ namespace Network {
                 case Socks5::ATYP_DOMAIN: {
                     uint8_t lenByte;
                     if (!ReadExact(sock, &lenByte, 1)) {
-                        Core::Logger::Error("SOCKS5: Failed to read domain length");
+                        Core::Logger::Error("SOCKS5: 读取域名长度失败");
                         return false;
                     }
                     addrLen = lenByte;
