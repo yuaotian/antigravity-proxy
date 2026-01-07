@@ -1,0 +1,4 @@
+E:/ProjectCode/C++Code/antigravity-proxy/build-x64/CMakeFiles/version.dir
+E:/ProjectCode/C++Code/antigravity-proxy/build-x64/CMakeFiles/INSTALL.dir
+E:/ProjectCode/C++Code/antigravity-proxy/build-x64/CMakeFiles/ALL_BUILD.dir
+E:/ProjectCode/C++Code/antigravity-proxy/build-x64/CMakeFiles/ZERO_CHECK.dir

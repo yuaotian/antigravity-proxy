@@ -1,3 +1,8 @@
+// 防止 windows.h 自动包含 winsock.h (避免与 winsock2.h 冲突)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
 #include <MinHook.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>

@@ -1,4 +1,10 @@
 #pragma once
+
+// 防止 windows.h 自动包含 winsock.h (避免与 winsock2.h 冲突)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
 #include <windows.h>
 #include <string>
 #include "../core/Logger.hpp"
