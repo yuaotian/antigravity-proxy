@@ -28,6 +28,9 @@ cmake_minimum_required(VERSION 3.0...3.5)
 
 project(antigravity-proxy LANGUAGES C CXX)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 include(CMakePackageConfigHelpers)
 
 set(MINHOOK_MAJOR_VERSION 1)
@@ -58,9 +61,10 @@ endif()
 set(SOURCES_PROXY
   "src/main.cpp"
   "src/hooks/Hooks.cpp"
-  # Headers are implicit
+  "src/proxy/VersionProxy.cpp"
 )
 
+# Resources
 if(BUILD_SHARED_LIBS)
   set(RESOURCES 
     "dll_resources/MinHook.rc"
@@ -68,33 +72,39 @@ if(BUILD_SHARED_LIBS)
   )
 endif()
 
-# Build antigravity-proxy DLL
-add_library(antigravity-proxy SHARED ${SOURCES_MINHOOK} ${SOURCES_HDE} ${SOURCES_PROXY} ${RESOURCES})
+# Build antigravity-proxy DLL (输出名为 version.dll)
+add_library(version SHARED ${SOURCES_MINHOOK} ${SOURCES_HDE} ${SOURCES_PROXY} ${RESOURCES})
 
-target_include_directories(antigravity-proxy PUBLIC
+# 设置模块定义文件 (导出 version.dll 函数)
+set_target_properties(version PROPERTIES
+  LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/src/proxy/version.def\""
+)
+
+target_include_directories(version PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
   $<INSTALL_INTERFACE:include>
 )
 
-target_include_directories(antigravity-proxy PRIVATE "src/")
-target_include_directories(antigravity-proxy PRIVATE "src/hde/")
+target_include_directories(version PRIVATE "src/")
+target_include_directories(version PRIVATE "src/hde/")
 
 # Link WS2_32
-target_link_libraries(antigravity-proxy PRIVATE ws2_32)
+target_link_libraries(version PRIVATE ws2_32)
 
 if(WIN32)
-  set_target_properties(antigravity-proxy PROPERTIES PREFIX "")
+  set_target_properties(version PROPERTIES PREFIX "")
   if(CMAKE_SIZEOF_VOID_P EQUAL 8)   
-    set_target_properties(antigravity-proxy PROPERTIES DEBUG_POSTFIX ".x64d")
-    set_target_properties(antigravity-proxy PROPERTIES RELEASE_POSTFIX ".x64")
+    set_target_properties(version PROPERTIES OUTPUT_NAME "version")
+    set_target_properties(version PROPERTIES DEBUG_POSTFIX ".x64d")
+    set_target_properties(version PROPERTIES RELEASE_POSTFIX "")
   else()
-    set_target_properties(antigravity-proxy PROPERTIES DEBUG_POSTFIX ".x32d")
-    set_target_properties(antigravity-proxy PROPERTIES RELEASE_POSTFIX ".x32")
+    set_target_properties(version PROPERTIES OUTPUT_NAME "version")
+    set_target_properties(version PROPERTIES DEBUG_POSTFIX ".x32d")
+    set_target_properties(version PROPERTIES RELEASE_POSTFIX "")
   endif()
 endif()
 
 ###################
 #     INSTALL     #
 ###################
-# Simplified install for the proxy
-install(TARGETS antigravity-proxy RUNTIME DESTINATION "bin")
+install(TARGETS version RUNTIME DESTINATION "bin")

@@ -1,0 +1,23 @@
+; version.dll Module Definition File
+; 用于静态导出转发，将所有 version.dll 函数转发到真正的系统 DLL
+
+LIBRARY version
+
+EXPORTS
+    GetFileVersionInfoA = VersionProxy_GetFileVersionInfoA
+    GetFileVersionInfoByHandle = VersionProxy_GetFileVersionInfoByHandle
+    GetFileVersionInfoExA = VersionProxy_GetFileVersionInfoExA
+    GetFileVersionInfoExW = VersionProxy_GetFileVersionInfoExW
+    GetFileVersionInfoSizeA = VersionProxy_GetFileVersionInfoSizeA
+    GetFileVersionInfoSizeExA = VersionProxy_GetFileVersionInfoSizeExA
+    GetFileVersionInfoSizeExW = VersionProxy_GetFileVersionInfoSizeExW
+    GetFileVersionInfoSizeW = VersionProxy_GetFileVersionInfoSizeW
+    GetFileVersionInfoW = VersionProxy_GetFileVersionInfoW
+    VerFindFileA = VersionProxy_VerFindFileA
+    VerFindFileW = VersionProxy_VerFindFileW
+    VerInstallFileA = VersionProxy_VerInstallFileA
+    VerInstallFileW = VersionProxy_VerInstallFileW
+    VerLanguageNameA = VersionProxy_VerLanguageNameA
+    VerLanguageNameW = VersionProxy_VerLanguageNameW
+    VerQueryValueA = VersionProxy_VerQueryValueA
+    VerQueryValueW = VersionProxy_VerQueryValueW
