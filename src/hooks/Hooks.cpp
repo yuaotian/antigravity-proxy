@@ -137,6 +137,24 @@ static bool IsIpLiteralHost(const std::string& host) {
     return false;
 }
 
+// 将 sockaddr 转成可读地址，便于日志排查
+static std::string SockaddrToString(const sockaddr* addr) {
+    if (!addr) return "";
+    if (addr->sa_family == AF_INET) {
+        const auto* addr4 = (const sockaddr_in*)addr;
+        char buf[INET_ADDRSTRLEN] = {};
+        if (!inet_ntop(AF_INET, &addr4->sin_addr, buf, sizeof(buf))) return "";
+        return std::string(buf) + ":" + std::to_string(ntohs(addr4->sin_port));
+    }
+    if (addr->sa_family == AF_INET6) {
+        const auto* addr6 = (const sockaddr_in6*)addr;
+        char buf[INET6_ADDRSTRLEN] = {};
+        if (!inet_ntop(AF_INET6, &addr6->sin6_addr, buf, sizeof(buf))) return "";
+        return std::string(buf) + ":" + std::to_string(ntohs(addr6->sin6_port));
+    }
+    return "";
+}
+
 static std::wstring Utf8ToWide(const std::string& input) {
     if (input.empty()) return L"";
     int len = MultiByteToWideChar(CP_UTF8, 0, input.c_str(), -1, NULL, 0);
@@ -310,7 +328,16 @@ int PerformProxyConnect(SOCKET s, const struct sockaddr* name, int namelen, bool
     }
     
     if (name->sa_family != AF_INET) {
-        Core::Logger::Info("非 IPv4 连接已直连, family=" + std::to_string((int)name->sa_family));
+        std::string addrStr = SockaddrToString(name);
+        if (config.proxy.port != 0) {
+            // 强制 IPv4：阻止 IPv6 直连，避免绕过代理
+            Core::Logger::Warn("已阻止非 IPv4 连接(强制 IPv4), family=" + std::to_string((int)name->sa_family) +
+                               (addrStr.empty() ? "" : ", addr=" + addrStr));
+            WSASetLastError(WSAEAFNOSUPPORT);
+            return SOCKET_ERROR;
+        }
+        Core::Logger::Info("非 IPv4 连接已直连, family=" + std::to_string((int)name->sa_family) +
+                           (addrStr.empty() ? "" : ", addr=" + addrStr));
         return isWsa ? fpWSAConnect(s, name, namelen, NULL, NULL, NULL, NULL) : fpConnect(s, name, namelen);
     }
     
@@ -589,7 +616,16 @@ BOOL PASCAL DetourConnectEx(
     sock.SetTimeouts(config.timeout.recv_ms, config.timeout.send_ms);
     
     if (name->sa_family != AF_INET) {
-        Core::Logger::Info("ConnectEx 非 IPv4 连接已直连, family=" + std::to_string((int)name->sa_family));
+        std::string addrStr = SockaddrToString(name);
+        if (config.proxy.port != 0) {
+            // 强制 IPv4：阻止 IPv6 直连，避免绕过代理
+            Core::Logger::Warn("ConnectEx 已阻止非 IPv4 连接(强制 IPv4), family=" + std::to_string((int)name->sa_family) +
+                               (addrStr.empty() ? "" : ", addr=" + addrStr));
+            WSASetLastError(WSAEAFNOSUPPORT);
+            return FALSE;
+        }
+        Core::Logger::Info("ConnectEx 非 IPv4 连接已直连, family=" + std::to_string((int)name->sa_family) +
+                           (addrStr.empty() ? "" : ", addr=" + addrStr));
         return fpConnectEx(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
     }
     
@@ -731,7 +767,7 @@ BOOL WINAPI DetourGetQueuedCompletionStatusEx(
         ulNumEntriesRemoved, dwMilliseconds, fAlertable
     );
     
-    if (result && ulNumEntriesRemoved && *ulNumEntriesRemoved > 0) {
+    if (result && lpCompletionPortEntries && ulNumEntriesRemoved && *ulNumEntriesRemoved > 0) {
         // 遍历所有完成的事件，检查是否有待处理的 ConnectEx 上下文
         for (ULONG i = 0; i < *ulNumEntriesRemoved; i++) {
             LPOVERLAPPED ovl = lpCompletionPortEntries[i].lpOverlapped;
@@ -741,7 +777,18 @@ BOOL WINAPI DetourGetQueuedCompletionStatusEx(
                 if (!HandleConnectExCompletion(ovl)) {
                     // 握手失败，记录日志供调试
                     Core::Logger::Error("GetQueuedCompletionStatusEx: ConnectEx 握手失败");
+                    // 握手失败时直接返回 FALSE，避免调用方误判为成功
+                    if (GetLastError() == 0) SetLastError(WSAECONNREFUSED);
+                    return FALSE;
                 }
+            }
+        }
+    } else if (!result && lpCompletionPortEntries && ulNumEntriesRemoved && *ulNumEntriesRemoved > 0) {
+        // 失败时清理残留上下文，避免 Overlapped 复用导致错配
+        for (ULONG i = 0; i < *ulNumEntriesRemoved; i++) {
+            LPOVERLAPPED ovl = lpCompletionPortEntries[i].lpOverlapped;
+            if (ovl) {
+                DropConnectExContext(ovl);
             }
         }
     }

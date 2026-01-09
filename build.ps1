@@ -268,7 +268,7 @@ $configJson = @{
     traffic_logging = $false
     child_injection = $true
     target_processes = @(
-        "language_server_windows.exe",
+        "language_server_windows",
         "Antigravity.exe"
     )
 } | ConvertTo-Json -Depth 4
