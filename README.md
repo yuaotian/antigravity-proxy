@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="img/antigravity_logo.jpg" alt="Antigravity Logo" width="120"/>
+  <img src="img/antigravity_logo.png" alt="Antigravity Logo" width="120"/>
 </p>
 
 <h1 align="center">Antigravity-Proxy</h1>
