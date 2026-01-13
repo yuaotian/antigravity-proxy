@@ -465,7 +465,8 @@ target_link_libraries(version PRIVATE ws2_32)
     "target_processes": [],
     "proxy_rules": {
         "allowed_ports": [80, 443],
-        "dns_mode": "direct"
+        "dns_mode": "direct",
+        "ipv6_mode": "proxy"
     }
 }
 ```
@@ -500,6 +501,15 @@ target_link_libraries(version PRIVATE ws2_32)
 | `target_processes` | array | `[]` | 目标进程列表 (空=全部) |
 | `proxy_rules.allowed_ports` | array | `[80, 443]` | 端口白名单 (空=全部) |
 | `proxy_rules.dns_mode` | string | `"direct"` | DNS策略: `direct`(直连) / `proxy`(走代理) |
+| `proxy_rules.ipv6_mode` | string | `"proxy"` | IPv6策略: `proxy`(走代理) / `direct`(直连) / `block`(阻止) |
+
+### IPv6 注意事项
+
+当日志出现 `SOCKS5: 读取认证响应失败, WSA错误码=10060`，且目标是 IPv6 地址（如 `2001:4860:4860::8888:443`），表示代理没有及时响应该 IPv6 连接。
+
+可选处理方式：
+- **不改 host，快速止血**：将 `proxy_rules.ipv6_mode` 改为 `block`（阻止）或 `direct`（直连）。
+- **继续代理 IPv6**：让代理监听 `::1` 或开启双栈，再把 `proxy.host` 改为 `::1`（确保代理实际监听）。
 
 ### 验证是否生效 / Verification
 
