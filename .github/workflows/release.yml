@@ -48,6 +48,34 @@ jobs:
         "release_tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         "release_version=$normalized" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
+    # 将本次发布版本号同步到 build.ps1，确保产物内版本号与 tag 一致
+    - name: 同步版本号到 build.ps1
+      shell: pwsh
+      run: |
+        $ver = "${{ steps.prepare_version.outputs.release_version }}"
+        if ([string]::IsNullOrWhiteSpace($ver)) {
+          Write-Error "发布版本号为空，无法同步到 build.ps1"
+          exit 1
+        }
+
+        $path = Join-Path $env:GITHUB_WORKSPACE "build.ps1"
+        if (-not (Test-Path $path)) {
+          Write-Error "未找到 build.ps1：$path"
+          exit 1
+        }
+
+        $content = Get-Content -Path $path -Raw -Encoding UTF8
+        $pattern = '(?m)^\s*\$Version\s*=\s*".*?"\s*$'
+        if (-not [regex]::IsMatch($content, $pattern)) {
+          Write-Error "未在 build.ps1 中找到 `$Version = \"...\"` 版本号行，无法自动更新。"
+          exit 1
+        }
+
+        $replacement = ('$Version = "{0}"' -f $ver)
+        $newContent = [regex]::Replace($content, $pattern, $replacement, 1)
+        Set-Content -Path $path -Value $newContent -Encoding UTF8
+        Write-Host "已同步 build.ps1 版本号为：$ver"
+
     # 使用 build.ps1 统一编译逻辑，避免与本地流程偏差
     - name: 执行编译脚本（Release，先清理）
       shell: pwsh
