@@ -160,16 +160,41 @@ namespace Core {
                     }
                     return false;
                 }
+                nlohmann::json j = nlohmann::json::parse(f);
+
+                // 日志等级：默认 info（更克制），允许通过配置切到 debug 以获得更细粒度排障信息
+                // 设计意图：默认减少刷屏/IO 开销，现场需要时可提升日志粒度。
+                const std::string logLevelStr = j.value("log_level", "info");
+                if (!Logger::SetLevelFromString(logLevelStr)) {
+                    Logger::SetLevel(LogLevel::Info);
+                    Logger::Warn("配置: log_level 无效(" + logLevelStr + ")，已回退为 info (可选: debug/info/warn/error)");
+                }
                 if (!resolvedPath.empty()) {
                     Logger::Info("使用配置文件路径: " + resolvedPath);
                 }
-                nlohmann::json j = nlohmann::json::parse(f);
                 
                 if (j.contains("proxy")) {
                     auto& p = j["proxy"];
                     proxy.host = p.value("host", "127.0.0.1");
                     proxy.port = p.value("port", 7890);
                     proxy.type = p.value("type", "socks5");
+                }
+
+                // 配置校验：统一 proxy.type 大小写，并对关键字段做防御性修正，避免运行期异常
+                std::transform(proxy.type.begin(), proxy.type.end(), proxy.type.begin(),
+                               [](unsigned char c) { return (char)std::tolower(c); });
+                if (proxy.type.empty()) proxy.type = "socks5";
+                if (proxy.type != "socks5" && proxy.type != "http") {
+                    Logger::Warn("配置: proxy.type 无效(" + proxy.type + ")，已回退为 socks5 (可选: socks5/http)");
+                    proxy.type = "socks5";
+                }
+                if (proxy.host.empty()) {
+                    Logger::Warn("配置: proxy.host 为空，已回退为 127.0.0.1");
+                    proxy.host = "127.0.0.1";
+                }
+                if (proxy.port < 0 || proxy.port > 65535) {
+                    Logger::Warn("配置: proxy.port 超出范围(" + std::to_string(proxy.port) + ")，已回退为 7890");
+                    proxy.port = 7890;
                 }
 
                 if (j.contains("fake_ip")) {
@@ -184,6 +209,20 @@ namespace Core {
                     timeout.connect_ms = t.value("connect", 5000);
                     timeout.send_ms = t.value("send", 5000);
                     timeout.recv_ms = t.value("recv", 5000);
+                }
+
+                // 配置校验：超时必须为正数，避免 select/WaitConnect 异常行为
+                if (timeout.connect_ms <= 0) {
+                    Logger::Warn("配置: timeout.connect 非法(" + std::to_string(timeout.connect_ms) + ")，已回退为 5000");
+                    timeout.connect_ms = 5000;
+                }
+                if (timeout.send_ms <= 0) {
+                    Logger::Warn("配置: timeout.send 非法(" + std::to_string(timeout.send_ms) + ")，已回退为 5000");
+                    timeout.send_ms = 5000;
+                }
+                if (timeout.recv_ms <= 0) {
+                    Logger::Warn("配置: timeout.recv 非法(" + std::to_string(timeout.recv_ms) + ")，已回退为 5000");
+                    timeout.recv_ms = 5000;
                 }
 
                 // ============= 代理路由规则解析 =============
@@ -202,12 +241,25 @@ namespace Core {
                     }
                     // 解析 DNS 策略
                     rules.dns_mode = pr.value("dns_mode", "direct");
+                    std::transform(rules.dns_mode.begin(), rules.dns_mode.end(),
+                                   rules.dns_mode.begin(),
+                                   [](unsigned char c) { return (char)std::tolower(c); });
+                    if (rules.dns_mode.empty()) rules.dns_mode = "direct";
                     // 解析 IPv6 策略，统一为小写，避免大小写导致配置失效
                     rules.ipv6_mode = pr.value("ipv6_mode", "proxy");
                     std::transform(rules.ipv6_mode.begin(), rules.ipv6_mode.end(),
                                    rules.ipv6_mode.begin(),
                                    [](unsigned char c) { return (char)std::tolower(c); });
                     if (rules.ipv6_mode.empty()) rules.ipv6_mode = "proxy";
+                }
+                // 配置校验：限制策略枚举取值，避免拼写错误导致绕过预期逻辑
+                if (rules.dns_mode != "direct" && rules.dns_mode != "proxy") {
+                    Logger::Warn("配置: proxy_rules.dns_mode 无效(" + rules.dns_mode + ")，已回退为 direct (可选: direct/proxy)");
+                    rules.dns_mode = "direct";
+                }
+                if (rules.ipv6_mode != "proxy" && rules.ipv6_mode != "direct" && rules.ipv6_mode != "block") {
+                    Logger::Warn("配置: proxy_rules.ipv6_mode 无效(" + rules.ipv6_mode + ")，已回退为 proxy (可选: proxy/direct/block)");
+                    rules.ipv6_mode = "proxy";
                 }
                 Logger::Info("路由规则: allowed_ports=" + std::to_string(rules.allowed_ports.size()) + 
                              " 项, dns_mode=" + rules.dns_mode + ", ipv6_mode=" + rules.ipv6_mode +

@@ -103,18 +103,25 @@ namespace Network {
             auto it = m_domainToIp.find(domain);
             if (it != m_domainToIp.end()) {
                 // 可选：更新 LRU？Ring Buffer 不需要 LRU，由于空间只要够大，复用率低
+                if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                    Core::Logger::Debug("FakeIP: 命中 " + domain + " -> " + IpToString(htonl(it->second)));
+                }
                 return htonl(it->second);
             }
             
             // 2. 分配新 IP
-            if (m_networkSize <= 2) return 0; // 防御性检查
+            if (m_networkSize <= 2) {
+                // 防御性检查：网段过小会导致无法分配（此处记录告警便于排障）
+                Core::Logger::Warn("FakeIP: 地址池过小，无法分配 (networkSize=" + std::to_string(m_networkSize) + ")");
+                return 0;
+            }
 
             // 游标移动
             uint32_t offset = m_cursor++;
             // 简单的 Ring Buffer: 超过范围回到 1
             if (m_cursor >= m_networkSize - 1) { 
                 m_cursor = 1; 
-                Core::Logger::Info("FakeIP: 地址池循环回绕");
+                Core::Logger::Debug("FakeIP: 地址池循环回绕");
             }
 
             uint32_t newIp = m_baseIp | offset;
@@ -124,14 +131,18 @@ namespace Network {
             if (oldIt != m_ipToDomain.end()) {
                 // 把旧域名从反向表中移除
                 m_domainToIp.erase(oldIt->second);
-                // Core::Logger::Debug("FakeIP: 回收 IP " + IpToString(htonl(newIp)) + " (原域名: " + oldIt->second + ")");
+                if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                    Core::Logger::Debug("FakeIP: 回收 " + IpToString(htonl(newIp)) + " (原域名: " + oldIt->second + ")");
+                }
             }
 
             // 4. 建立新映射
             m_ipToDomain[newIp] = domain;
             m_domainToIp[domain] = newIp;
             
-            Core::Logger::Info("FakeIP: 分配 " + IpToString(htonl(newIp)) + " -> " + domain);
+            if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                Core::Logger::Debug("FakeIP: 分配 " + IpToString(htonl(newIp)) + " -> " + domain);
+            }
             return htonl(newIp);
         }
         
@@ -143,7 +154,18 @@ namespace Network {
             
             auto it = m_ipToDomain.find(ip);
             if (it != m_ipToDomain.end()) {
+                if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                    Core::Logger::Debug("FakeIP: 查询命中 " + IpToString(ipNetworkOrder) + " -> " + it->second);
+                }
                 return it->second;
+            }
+
+            // 如果是 FakeIP 网段内地址但查不到，通常意味着已回收/未分配或上下文不一致
+            const bool isFake = ((ip & m_mask) == m_baseIp);
+            if (isFake) {
+                Core::Logger::Warn("FakeIP: 查询未命中 " + IpToString(ipNetworkOrder) + "，可能已回收或未分配");
+            } else if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                Core::Logger::Debug("FakeIP: 查询非 FakeIP 地址 " + IpToString(ipNetworkOrder) + "，忽略");
             }
             return "";
         }

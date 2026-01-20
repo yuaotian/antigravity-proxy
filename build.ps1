@@ -251,6 +251,8 @@ $configJson = @{
         "config" = $Config
         "arch" = $Arch
     }
+    # 日志等级：默认 info（更克制，减少刷屏/IO 开销）；需要更细粒度排障时可改为 debug
+    log_level = "info"
     proxy = @{
         host = "127.0.0.1"
         port = 7890
@@ -311,6 +313,7 @@ Antigravity-Proxy 是一个基于 MinHook 的 Windows DLL 代理注入工具。
         "port": 7890,              // 代理服务器端口
         "type": "socks5"           // 代理类型: socks5 或 http
     },
+    "log_level": "info",           // 日志等级: debug/info/warn/error (默认 info)
     "fake_ip": {
         "enabled": true,           // 是否启用 FakeIP 系统 (拦截 DNS 解析)
         "cidr": "198.18.0.0/15"       // FakeIP 分配的虚拟 IP 地址范围 (默认为基准测试保留网段)
@@ -361,6 +364,7 @@ Test-NetConnection -ComputerName 127.0.0.1 -Port 7890
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
+| log_level | 日志等级 (debug/info/warn/error) | info |
 | proxy.host | 代理服务器地址 | 127.0.0.1 |
 | proxy.port | 代理服务器端口 | 7890 |
 | proxy.type | 代理类型 (socks5/http) | socks5 |
