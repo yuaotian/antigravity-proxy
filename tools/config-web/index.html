@@ -7,29 +7,34 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="hero">
-    <div class="hero-content">
-      <p class="eyebrow">Antigravity-Proxy</p>
-      <h1>规则路由配置工具</h1>
-      <p class="subtitle">可视化编辑内网分流、域名通配符、端口与协议规则，直接导出 config.json。</p>
+  <header class="topbar">
+    <div class="brand minimalist">
+      <h1 class="brand-title">Antigravity</h1>
     </div>
-    <div class="hero-actions">
+    <div class="topbar-actions">
       <label class="file-button">
         导入 config.json
         <input id="configFile" type="file" accept="application/json" />
       </label>
-      <button id="btnDownload" class="primary">导出并下载</button>
       <button id="btnLoadExample" class="ghost">载入示例</button>
+      <button id="btnDownload" class="primary">导出并下载</button>
     </div>
   </header>
 
   <main class="layout">
-    <section class="panel">
-      <h2>全局路由设置</h2>
-      <div class="grid">
-        <label class="field">
-          <span>启用路由</span>
+    <section class="card">
+      <div class="card-header">
+        <h2>全局路由设置</h2>
+        <p>确定规则生效顺序与默认动作。</p>
+      </div>
+      <div class="form-grid compact">
+        <label class="field inline">
           <input id="routingEnabled" type="checkbox" />
+          <span>启用路由</span>
+        </label>
+        <label class="field inline">
+          <input id="useDefaultPrivate" type="checkbox" />
+          <span>内置私网直连</span>
         </label>
         <label class="field">
           <span>优先级模式</span>
@@ -45,84 +50,117 @@
             <option value="direct">direct</option>
           </select>
         </label>
-        <label class="field">
-          <span>内置私网直连</span>
-          <input id="useDefaultPrivate" type="checkbox" />
-        </label>
       </div>
-      <div id="priorityWarning" class="warning"></div>
+      <p class="hint">勾选“内置私网直连”会自动加入 RFC1918、loopback、link-local 直连规则。</p>
+      <div id="priorityWarning" class="notice"></div>
     </section>
 
-    <section class="panel split">
-      <div class="rule-list">
-        <div class="rule-list-header">
-          <h2>规则列表</h2>
-          <div class="rule-list-actions">
-            <button id="btnAddRule">新增规则</button>
-            <button id="btnCloneRule">复制规则</button>
-            <button id="btnDeleteRule" class="danger">删除规则</button>
+    <section class="card rule-section">
+      <div class="card-header">
+        <h2>规则管理</h2>
+        <p>左侧选择规则，右侧编辑详情。规则生效顺序由优先级模式决定。</p>
+      </div>
+      <div class="rule-layout">
+        <aside class="rule-list">
+          <div class="rule-list-toolbar">
+            <button id="btnAddRule">新增</button>
+            <button id="btnCloneRule">复制</button>
+            <button id="btnDeleteRule" class="danger">删除</button>
           </div>
-        </div>
-        <ul id="ruleList"></ul>
-        <div class="rule-list-actions">
-          <button id="btnMoveUp">上移</button>
-          <button id="btnMoveDown">下移</button>
-        </div>
-      </div>
+          <ul id="ruleList"></ul>
+          <div class="rule-list-toolbar">
+            <button id="btnMoveUp">上移</button>
+            <button id="btnMoveDown">下移</button>
+          </div>
+        </aside>
 
-      <div class="rule-editor">
-        <h2>规则详情</h2>
-        <div class="grid">
+        <div class="rule-editor">
+          <div class="section-title">
+            <h3>规则详情</h3>
+            <p>编辑会实时更新规则列表。域名支持 .local 与 *.example.com。</p>
+          </div>
+          <div class="form-grid">
+            <label class="field">
+              <span>名称</span>
+              <input id="ruleName" type="text" />
+            </label>
+            <label class="field">
+              <span>启用</span>
+              <input id="ruleEnabled" type="checkbox" />
+            </label>
+            <label class="field">
+              <span>动作</span>
+              <select id="ruleAction">
+                <option value="direct">direct</option>
+                <option value="proxy">proxy</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>priority（数字模式）</span>
+              <input id="rulePriority" type="number" />
+            </label>
+          </div>
+          <div class="form-grid two">
+            <label class="field">
+              <span>IPv4 CIDR（每行一条）</span>
+              <textarea id="ruleIpv4" rows="4"></textarea>
+            </label>
+            <label class="field">
+              <span>IPv6 CIDR（每行一条）</span>
+              <textarea id="ruleIpv6" rows="4"></textarea>
+            </label>
+          </div>
+          <p class="hint">全量匹配建议填写：IPv4 = 0.0.0.0/0，IPv6 = ::/0。</p>
+          <div class="form-grid two">
+            <label class="field">
+              <span>域名通配符（每行一条）</span>
+              <textarea id="ruleDomains" rows="4"></textarea>
+            </label>
+            <label class="field">
+              <span>端口（如 443 或 10000-20000）</span>
+              <textarea id="rulePorts" rows="4"></textarea>
+            </label>
+          </div>
+          <p class="hint">端口留空代表“全部端口”；域名留空只按 CIDR 匹配；域名填 * 可匹配全部域名。</p>
           <label class="field">
-            <span>名称</span>
-            <input id="ruleName" type="text" />
-          </label>
-          <label class="field">
-            <span>启用</span>
-            <input id="ruleEnabled" type="checkbox" />
-          </label>
-          <label class="field">
-            <span>动作</span>
-            <select id="ruleAction">
-              <option value="direct">direct</option>
-              <option value="proxy">proxy</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>priority（数字模式）</span>
-            <input id="rulePriority" type="number" />
+            <span>协议（默认 tcp，可留空）</span>
+            <input id="ruleProtocols" type="text" placeholder="tcp" />
           </label>
         </div>
-        <div class="grid two">
-          <label class="field">
-            <span>IPv4 CIDR（每行一条）</span>
-            <textarea id="ruleIpv4" rows="4"></textarea>
-          </label>
-          <label class="field">
-            <span>IPv6 CIDR（每行一条）</span>
-            <textarea id="ruleIpv6" rows="4"></textarea>
-          </label>
-        </div>
-        <div class="grid two">
-          <label class="field">
-            <span>域名通配符（每行一条）</span>
-            <textarea id="ruleDomains" rows="4"></textarea>
-          </label>
-          <label class="field">
-            <span>端口（如 443 或 10000-20000）</span>
-            <textarea id="rulePorts" rows="4"></textarea>
-          </label>
-        </div>
-        <label class="field">
-          <span>协议（默认 tcp，可留空）</span>
-          <input id="ruleProtocols" type="text" placeholder="tcp" />
-        </label>
       </div>
     </section>
 
-    <section class="panel">
-      <h2>规则命中测试</h2>
-      <div class="grid">
+    <section class="card">
+      <div class="card-header">
+        <h2>上游代理配置</h2>
+        <p>设置当前系统使用的代理地址与类型。</p>
+      </div>
+      <div class="form-grid">
+        <label class="field">
+          <span>代理类型</span>
+          <select id="proxyType">
+            <option value="socks5">socks5</option>
+            <option value="http">http</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>代理地址</span>
+          <input id="proxyHost" type="text" placeholder="127.0.0.1" />
+        </label>
+        <label class="field">
+          <span>代理端口</span>
+          <input id="proxyPort" type="number" placeholder="7890" />
+        </label>
+      </div>
+      <p class="hint">此处会写入 config.json 的 proxy.host / proxy.port / proxy.type。</p>
+    </section>
+
+    <section class="card">
+      <div class="card-header">
+        <h2>规则命中测试</h2>
+        <p>快速验证规则是否命中（只做本地匹配，不会发起真实网络请求）。</p>
+      </div>
+      <div class="form-grid">
         <label class="field">
           <span>目标 Host/IP</span>
           <input id="testHost" type="text" placeholder="nas.local / 192.168.1.10" />
@@ -147,7 +185,7 @@
   </main>
 
   <footer class="footer">
-    <p>提示：优先级模式为“按列表顺序”时，规则顺序就是最终生效顺序；若选择“按 priority 数值”，数值越大优先级越高。</p>
+    <p>提示：规则优先级由“优先级模式”决定，请保持规则顺序和 priority 一致性。</p>
   </footer>
 
   <script src="app.js"></script>

@@ -65,6 +65,9 @@ const elements = {
   testProto: $("testProto"),
   btnTest: $("btnTest"),
   testResult: $("testResult"),
+  proxyType: $("proxyType"),
+  proxyHost: $("proxyHost"),
+  proxyPort: $("proxyPort"),
 };
 
 const normalizeRouting = (input) => {
@@ -109,6 +112,13 @@ const renderGlobal = () => {
   } else {
     elements.priorityWarning.textContent = "强提醒：当前为【按 priority 数值】模式，priority 越大越优先。列表顺序不代表生效顺序。";
   }
+};
+
+const renderProxy = () => {
+  const proxy = baseConfig.proxy || {};
+  elements.proxyType.value = proxy.type || "socks5";
+  elements.proxyHost.value = proxy.host || "127.0.0.1";
+  elements.proxyPort.value = proxy.port ?? 7890;
 };
 
 const renderRuleList = () => {
@@ -168,6 +178,7 @@ const loadConfig = (json) => {
   routing = normalizeRouting(incoming);
   selectedIndex = 0;
   renderGlobal();
+  renderProxy();
   renderRuleList();
   renderRuleEditor();
 };
@@ -176,6 +187,11 @@ const downloadConfig = () => {
   const out = JSON.parse(JSON.stringify(baseConfig || {}));
   if (!out.proxy_rules) out.proxy_rules = {};
   out.proxy_rules.routing = routing;
+  if (!out.proxy) out.proxy = {};
+  out.proxy.type = elements.proxyType.value || "socks5";
+  out.proxy.host = elements.proxyHost.value.trim() || "127.0.0.1";
+  const portValue = parseInt(elements.proxyPort.value || "7890", 10);
+  out.proxy.port = Number.isFinite(portValue) ? portValue : 7890;
   const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
