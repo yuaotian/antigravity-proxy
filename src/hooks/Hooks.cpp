@@ -355,6 +355,38 @@ static std::string SockaddrToString(const sockaddr* addr) {
     return "";
 }
 
+// 从 sockaddr 提取纯 IP（不含端口）
+static bool SockaddrToIp(const sockaddr* addr, std::string* outIp, bool* outIsV6) {
+    if (!addr || !outIp) return false;
+    if (outIsV6) *outIsV6 = false;
+    if (addr->sa_family == AF_INET) {
+        const auto* addr4 = (const sockaddr_in*)addr;
+        char buf[INET_ADDRSTRLEN] = {};
+        if (!inet_ntop(AF_INET, &addr4->sin_addr, buf, sizeof(buf))) return false;
+        *outIp = std::string(buf);
+        return true;
+    }
+    if (addr->sa_family == AF_INET6) {
+        const auto* addr6 = (const sockaddr_in6*)addr;
+        if (IN6_IS_ADDR_V4MAPPED(&addr6->sin6_addr)) {
+            in_addr addr4{};
+            const unsigned char* raw = reinterpret_cast<const unsigned char*>(&addr6->sin6_addr);
+            memcpy(&addr4, raw + 12, sizeof(addr4));
+            char buf4[INET_ADDRSTRLEN] = {};
+            if (!inet_ntop(AF_INET, &addr4, buf4, sizeof(buf4))) return false;
+            *outIp = std::string(buf4);
+            if (outIsV6) *outIsV6 = false;
+            return true;
+        }
+        char buf[INET6_ADDRSTRLEN] = {};
+        if (!inet_ntop(AF_INET6, &addr6->sin6_addr, buf, sizeof(buf))) return false;
+        *outIp = std::string(buf);
+        if (outIsV6) *outIsV6 = true;
+        return true;
+    }
+    return false;
+}
+
 // 从 sockaddr 提取端口（仅用于策略判断/日志；失败时返回 false）
 static bool TryGetSockaddrPort(const sockaddr* addr, uint16_t* outPort) {
     if (!outPort) return false;
@@ -861,6 +893,25 @@ int PerformProxyConnect(SOCKET s, const struct sockaddr* name, int namelen, bool
     if (IsProxySelfTarget(originalHost, originalPort, config.proxy)) {
         return isWsa ? fpWSAConnect(s, name, namelen, NULL, NULL, NULL, NULL) : fpConnect(s, name, namelen);
     }
+
+    // ROUTE-0: 自定义路由规则（域名/CIDR/端口/协议）
+    std::string addrIp;
+    bool addrIsV6 = false;
+    SockaddrToIp(name, &addrIp, &addrIsV6);
+    std::string routeAction;
+    std::string routeRule;
+    const bool routeMatched = config.rules.MatchRouting(originalHost, addrIp, addrIsV6, originalPort, "tcp",
+                                                        &routeAction, &routeRule);
+    if (!routeAction.empty() && routeAction == "direct") {
+        Core::Logger::Info("[Route] direct" +
+                           std::string(routeMatched ? (" rule=" + routeRule) : " rule=(default)") +
+                           ", target=" + originalHost + ":" + std::to_string(originalPort));
+        return isWsa ? fpWSAConnect(s, name, namelen, NULL, NULL, NULL, NULL)
+                     : fpConnect(s, name, namelen);
+    } else if (routeMatched) {
+        Core::Logger::Info("[Route] proxy rule=" + routeRule +
+                           ", target=" + originalHost + ":" + std::to_string(originalPort));
+    }
     
     // ============= 智能路由决策 =============
     // ROUTE-1: DNS 端口特殊处理 (解决 DNS 超时问题)
@@ -1036,6 +1087,17 @@ int WSAAPI DetourGetAddrInfo(PCSTR pNodeName, PCSTR pServiceName,
     // 如果启用了 FakeIP 且有域名请求
     if (pNodeName && config.fakeIp.enabled) {
         std::string node = pNodeName;
+        std::string routeAction;
+        std::string routeRule;
+        const bool routeMatched = config.rules.MatchRouting(node, "", false, 0, "tcp", &routeAction, &routeRule);
+        if (!routeAction.empty() && routeAction == "direct") {
+            if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                Core::Logger::Debug("[Route] DNS bypass FakeIP, rule=" +
+                                    std::string(routeMatched ? routeRule : "(default)") +
+                                    ", host=" + node);
+            }
+            return fpGetAddrInfo(pNodeName, pServiceName, pHints, ppResult);
+        }
         // 重要：回环/纯 IP 不走 FakeIP，避免与回环 bypass 逻辑冲突，也避免改变原始解析语义
         if (!node.empty() && !IsLoopbackHost(node) && !IsIpLiteralHost(node)) {
             if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
@@ -1081,6 +1143,17 @@ int WSAAPI DetourGetAddrInfoW(PCWSTR pNodeName, PCWSTR pServiceName,
     // 如果启用了 FakeIP 且有域名请求
     if (pNodeName && config.fakeIp.enabled) {
         std::string nodeUtf8 = WideToUtf8(pNodeName);
+        std::string routeAction;
+        std::string routeRule;
+        const bool routeMatched = config.rules.MatchRouting(nodeUtf8, "", false, 0, "tcp", &routeAction, &routeRule);
+        if (!routeAction.empty() && routeAction == "direct") {
+            if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                Core::Logger::Debug("[Route] DNS bypass FakeIP, rule=" +
+                                    std::string(routeMatched ? routeRule : "(default)") +
+                                    ", host=" + nodeUtf8);
+            }
+            return fpGetAddrInfoW(pNodeName, pServiceName, pHints, ppResult);
+        }
         // 重要：回环/纯 IP 不走 FakeIP，避免与回环 bypass 逻辑冲突，也避免改变原始解析语义
         if (!nodeUtf8.empty() && !IsLoopbackHost(nodeUtf8) && !IsIpLiteralHost(nodeUtf8)) {
             if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
@@ -1123,6 +1196,17 @@ struct hostent* WSAAPI DetourGetHostByName(const char* name) {
 
     if (name && config.fakeIp.enabled) {
         std::string node = name;
+        std::string routeAction;
+        std::string routeRule;
+        const bool routeMatched = config.rules.MatchRouting(node, "", false, 0, "tcp", &routeAction, &routeRule);
+        if (!routeAction.empty() && routeAction == "direct") {
+            if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                Core::Logger::Debug("[Route] DNS bypass FakeIP, rule=" +
+                                    std::string(routeMatched ? routeRule : "(default)") +
+                                    ", host=" + node);
+            }
+            return fpGetHostByName(name);
+        }
         if (!node.empty() && !IsLoopbackHost(node) && !IsIpLiteralHost(node)) {
             if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
                 Core::Logger::Debug("拦截到域名解析(gethostbyname): " + node);
@@ -1461,6 +1545,24 @@ BOOL PASCAL DetourConnectEx(
     
     if (IsLoopbackHost(originalHost) || IsProxySelfTarget(originalHost, originalPort, config.proxy)) {
         return originalConnectEx(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
+    }
+
+    // ROUTE-0: 自定义路由规则（域名/CIDR/端口/协议）
+    std::string addrIp;
+    bool addrIsV6 = false;
+    SockaddrToIp(name, &addrIp, &addrIsV6);
+    std::string routeAction;
+    std::string routeRule;
+    const bool routeMatched = config.rules.MatchRouting(originalHost, addrIp, addrIsV6, originalPort, "tcp",
+                                                        &routeAction, &routeRule);
+    if (!routeAction.empty() && routeAction == "direct") {
+        Core::Logger::Info("[Route] direct" +
+                           std::string(routeMatched ? (" rule=" + routeRule) : " rule=(default)") +
+                           ", target=" + originalHost + ":" + std::to_string(originalPort));
+        return originalConnectEx(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
+    } else if (routeMatched) {
+        Core::Logger::Info("[Route] proxy rule=" + routeRule +
+                           ", target=" + originalHost + ":" + std::to_string(originalPort));
     }
     
     if (config.proxy.port == 0) {
