@@ -41,6 +41,7 @@ typedef int (WSAAPI *WSAIoctl_t)(SOCKET, DWORD, LPVOID, DWORD, LPVOID, DWORD, LP
 typedef BOOL (WSAAPI *WSAGetOverlappedResult_t)(SOCKET, LPWSAOVERLAPPED, LPDWORD, BOOL, LPDWORD);
 typedef BOOL (WINAPI *GetQueuedCompletionStatus_t)(HANDLE, LPDWORD, PULONG_PTR, LPOVERLAPPED*, DWORD);
 typedef BOOL (WINAPI *CreateProcessW_t)(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
+typedef BOOL (WINAPI *CreateProcessA_t)(LPCSTR, LPSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCSTR, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
 // GetQueuedCompletionStatusEx 函数指针类型 - 用于批量获取 IOCP 事件（现代高性能应用必需）
 typedef BOOL (WINAPI *GetQueuedCompletionStatusEx_t)(
     HANDLE CompletionPort,
@@ -72,6 +73,7 @@ WSAGetOverlappedResult_t fpWSAGetOverlappedResult = NULL;
 GetQueuedCompletionStatus_t fpGetQueuedCompletionStatus = NULL;
 LPFN_CONNECTEX fpConnectEx = NULL;
 CreateProcessW_t fpCreateProcessW = NULL;
+CreateProcessA_t fpCreateProcessA = NULL;
 GetQueuedCompletionStatusEx_t fpGetQueuedCompletionStatusEx = NULL; // 批量 IOCP 事件获取
 
 // ============= 辅助函数 =============
@@ -401,7 +403,7 @@ static bool ShouldLogUdpBlock() {
     const int n = s_logCount.fetch_add(1, std::memory_order_relaxed);
     if (n < 20) return true; // 仅前 20 次输出详细阻断日志
     if (n == 20) {
-        Core::Logger::Warn("UDP 阻断日志过多，后续将仅在 [调试] 级别输出（避免 QUIC 重试导致日志/性能问题）");
+        Core::Logger::Warn("UDP 阻断日志过多，后续将仅在 [调试] 级别输出（避免 QUIC 重试导致日志/性能问题；注意：WSA错误码=10051 为策略阻断返回）");
     }
     return Core::Logger::IsEnabled(Core::LogLevel::Debug);
 }
@@ -768,7 +770,7 @@ int PerformProxyConnect(SOCKET s, const struct sockaddr* name, int namelen, bool
                 if (ShouldLogUdpBlock()) {
                     const std::string api = isWsa ? "WSAConnect" : "connect";
                     const std::string dst = SockaddrToString(name);
-                    Core::Logger::Warn(api + ": 已阻止 UDP 连接(策略: udp_mode=block), sock=" + std::to_string((unsigned long long)s) +
+                    Core::Logger::Warn(api + ": 已阻止 UDP 连接(策略: udp_mode=block, 说明: 禁用 QUIC/HTTP3), sock=" + std::to_string((unsigned long long)s) +
                                        (dst.empty() ? "" : ", dst=" + dst) +
                                        (hasPort ? (", port=" + std::to_string(dstPort)) : std::string("")) +
                                        ", WSA错误码=" + std::to_string(err));
@@ -854,11 +856,20 @@ int PerformProxyConnect(SOCKET s, const struct sockaddr* name, int namelen, bool
     
     // BYPASS: 跳过本地回环地址，避免代理死循环
     if (IsLoopbackHost(originalHost)) {
+        if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+            Core::Logger::Debug("BYPASS(loopback): sock=" + std::to_string((unsigned long long)s) +
+                                ", target=" + originalHost + ":" + std::to_string(originalPort));
+        }
         return isWsa ? fpWSAConnect(s, name, namelen, NULL, NULL, NULL, NULL) : fpConnect(s, name, namelen);
     }
     
     // BYPASS: 如果目标端口就是代理端口，直连（防止代理自连接）
     if (IsProxySelfTarget(originalHost, originalPort, config.proxy)) {
+        if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+            Core::Logger::Debug("BYPASS(proxy-self): sock=" + std::to_string((unsigned long long)s) +
+                                ", target=" + originalHost + ":" + std::to_string(originalPort) +
+                                ", proxy=" + config.proxy.host + ":" + std::to_string(config.proxy.port));
+        }
         return isWsa ? fpWSAConnect(s, name, namelen, NULL, NULL, NULL, NULL) : fpConnect(s, name, namelen);
     }
     
@@ -1381,7 +1392,7 @@ BOOL PASCAL DetourConnectEx(
                 const int err = WSAENETUNREACH;
                 if (ShouldLogUdpBlock()) {
                     const std::string dst = SockaddrToString(name);
-                    Core::Logger::Warn("ConnectEx: 已阻止 UDP 连接(策略: udp_mode=block), sock=" + std::to_string((unsigned long long)s) +
+                    Core::Logger::Warn("ConnectEx: 已阻止 UDP 连接(策略: udp_mode=block, 说明: 禁用 QUIC/HTTP3), sock=" + std::to_string((unsigned long long)s) +
                                        (dst.empty() ? "" : ", dst=" + dst) +
                                        (hasPort ? (", port=" + std::to_string(dstPort)) : std::string("")) +
                                        ", WSA错误码=" + std::to_string(err));
@@ -1459,7 +1470,19 @@ BOOL PASCAL DetourConnectEx(
         return originalConnectEx(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
     }
     
-    if (IsLoopbackHost(originalHost) || IsProxySelfTarget(originalHost, originalPort, config.proxy)) {
+    if (IsLoopbackHost(originalHost)) {
+        if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+            Core::Logger::Debug("ConnectEx BYPASS(loopback): sock=" + std::to_string((unsigned long long)s) +
+                                ", target=" + originalHost + ":" + std::to_string(originalPort));
+        }
+        return originalConnectEx(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
+    }
+    if (IsProxySelfTarget(originalHost, originalPort, config.proxy)) {
+        if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+            Core::Logger::Debug("ConnectEx BYPASS(proxy-self): sock=" + std::to_string((unsigned long long)s) +
+                                ", target=" + originalHost + ":" + std::to_string(originalPort) +
+                                ", proxy=" + config.proxy.host + ":" + std::to_string(config.proxy.port));
+        }
         return originalConnectEx(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
     }
     
@@ -1769,8 +1792,114 @@ BOOL WINAPI DetourCreateProcessW(
             // 注入 DLL 到子进程
             std::wstring dllPath = Injection::ProcessInjector::GetCurrentDllPath();
             if (!dllPath.empty()) {
-                Injection::ProcessInjector::InjectDll(lpProcessInformation->hProcess, dllPath);
-                Core::Logger::Info("[成功] 已注入目标进程: " + appName + " (PID: " + std::to_string(lpProcessInformation->dwProcessId) + ") - 父子关系建立");
+                const bool injected = Injection::ProcessInjector::InjectDll(lpProcessInformation->hProcess, dllPath);
+                if (injected) {
+                    Core::Logger::Info("[成功] 已注入目标进程: " + appName + " (PID: " + std::to_string(lpProcessInformation->dwProcessId) + ") - 父子关系建立");
+                } else {
+                    Core::Logger::Error("[失败] 注入目标进程失败: " + appName + " (PID: " + std::to_string(lpProcessInformation->dwProcessId) + ")");
+                }
+            } else {
+                Core::Logger::Error("[失败] 获取当前 DLL 路径失败，跳过注入: " + appName + " (PID: " + std::to_string(lpProcessInformation->dwProcessId) + ")");
+            }
+            
+            // 如果原始调用没有要求挂起，则恢复进程
+            if (!(dwCreationFlags & CREATE_SUSPENDED)) {
+                ResumeThread(lpProcessInformation->hThread);
+            }
+        }
+    }
+    
+    return result;
+}
+
+BOOL WINAPI DetourCreateProcessA(
+    LPCSTR lpApplicationName,
+    LPSTR lpCommandLine,
+    LPSECURITY_ATTRIBUTES lpProcessAttributes,
+    LPSECURITY_ATTRIBUTES lpThreadAttributes,
+    BOOL bInheritHandles,
+    DWORD dwCreationFlags,
+    LPVOID lpEnvironment,
+    LPCSTR lpCurrentDirectory,
+    LPSTARTUPINFOA lpStartupInfo,
+    LPPROCESS_INFORMATION lpProcessInformation
+) {
+    auto& config = Core::Config::Instance();
+    
+    // 添加 CREATE_SUSPENDED 标志以便注入
+    DWORD modifiedFlags = dwCreationFlags;
+    bool needInject = config.childInjection && !(dwCreationFlags & CREATE_SUSPENDED);
+    
+    if (needInject) {
+        modifiedFlags |= CREATE_SUSPENDED;
+    }
+    
+    // 调用原始函数创建进程
+    if (!fpCreateProcessA) {
+        SetLastError(ERROR_PROC_NOT_FOUND);
+        return FALSE;
+    }
+    BOOL result = fpCreateProcessA(
+        lpApplicationName, lpCommandLine,
+        lpProcessAttributes, lpThreadAttributes,
+        bInheritHandles, modifiedFlags,
+        lpEnvironment, lpCurrentDirectory,
+        lpStartupInfo, lpProcessInformation
+    );
+    
+    if (result && needInject && lpProcessInformation) {
+        // 先提取进程名用于过滤检查
+        std::string appName = "Unknown";
+        const char* targetStr = lpApplicationName ? lpApplicationName : lpCommandLine;
+        if (targetStr) {
+            appName = targetStr;
+            // 简单处理：提取文件名
+            size_t lastSlash = appName.find_last_of("\\/");
+            if (lastSlash != std::string::npos) appName = appName.substr(lastSlash + 1);
+            // 去掉可能的引号
+            if (!appName.empty() && appName.front() == '\"') appName.erase(0, 1);
+            if (!appName.empty() && appName.back() == '\"') appName.pop_back();
+            // 再次过滤可能的参数（针对 lpCommandLine）
+            size_t firstSpace = appName.find(' ');
+            if (firstSpace != std::string::npos) appName = appName.substr(0, firstSpace);
+        }
+        
+        // 检查是否在目标进程列表中
+        if (!config.ShouldInject(appName)) {
+            bool shouldLog = false;
+            {
+                std::lock_guard<std::mutex> lock(g_loggedSkipProcessesMtx);
+                if (g_loggedSkipProcesses.size() >= kMaxLoggedSkipProcesses) {
+                    // 达到上限时清空，避免无限增长
+                    g_loggedSkipProcesses.clear();
+                }
+                if (g_loggedSkipProcesses.find(appName) == g_loggedSkipProcesses.end()) {
+                    g_loggedSkipProcesses[appName] = true;
+                    shouldLog = true;
+                }
+            }
+            if (shouldLog) {
+                Core::Logger::Info("[跳过] 非目标进程(仅首次记录): " + appName +
+                                  " (PID: " + std::to_string(lpProcessInformation->dwProcessId) + ")");
+            }
+            // 恢复进程（不注入）
+            if (!(dwCreationFlags & CREATE_SUSPENDED)) {
+                ResumeThread(lpProcessInformation->hThread);
+            }
+        } else {
+            Core::Logger::Info("拦截到进程创建(CreateProcessA)，准备注入 DLL...");
+            
+            // 注入 DLL 到子进程
+            std::wstring dllPath = Injection::ProcessInjector::GetCurrentDllPath();
+            if (!dllPath.empty()) {
+                const bool injected = Injection::ProcessInjector::InjectDll(lpProcessInformation->hProcess, dllPath);
+                if (injected) {
+                    Core::Logger::Info("[成功] 已注入目标进程: " + appName + " (PID: " + std::to_string(lpProcessInformation->dwProcessId) + ") - 父子关系建立");
+                } else {
+                    Core::Logger::Error("[失败] 注入目标进程失败: " + appName + " (PID: " + std::to_string(lpProcessInformation->dwProcessId) + ")");
+                }
+            } else {
+                Core::Logger::Error("[失败] 获取当前 DLL 路径失败，跳过注入: " + appName + " (PID: " + std::to_string(lpProcessInformation->dwProcessId) + ")");
             }
             
             // 如果原始调用没有要求挂起，则恢复进程
@@ -1855,7 +1984,7 @@ int WSAAPI DetourSendTo(SOCKET s, const char* buf, int len, int flags, const str
                 const int err = WSAENETUNREACH;
                 if (ShouldLogUdpBlock()) {
                     const std::string dstStr = dst ? SockaddrToString(dst) : std::string("(未知)");
-                    Core::Logger::Warn("sendto: 已阻止 UDP 发送(策略: udp_mode=block), sock=" + std::to_string((unsigned long long)s) +
+                    Core::Logger::Warn("sendto: 已阻止 UDP 发送(策略: udp_mode=block, 说明: 禁用 QUIC/HTTP3), sock=" + std::to_string((unsigned long long)s) +
                                        ", dst=" + dstStr +
                                        (hasPort ? (", port=" + std::to_string(dstPort)) : std::string("")) +
                                        ", WSA错误码=" + std::to_string(err));
@@ -1904,7 +2033,7 @@ int WSAAPI DetourWSASendTo(
                 }
                 if (ShouldLogUdpBlock()) {
                     const std::string dstStr = dst ? SockaddrToString(dst) : std::string("(未知)");
-                    Core::Logger::Warn("WSASendTo: 已阻止 UDP 发送(策略: udp_mode=block), sock=" + std::to_string((unsigned long long)s) +
+                    Core::Logger::Warn("WSASendTo: 已阻止 UDP 发送(策略: udp_mode=block, 说明: 禁用 QUIC/HTTP3), sock=" + std::to_string((unsigned long long)s) +
                                        ", dst=" + dstStr +
                                        (hasPort ? (", port=" + std::to_string(dstPort)) : std::string("")) +
                                        ", WSA错误码=" + std::to_string(err));
@@ -1997,6 +2126,12 @@ namespace Hooks {
         if (MH_CreateHookApi(L"kernel32.dll", "CreateProcessW",
                              (LPVOID)DetourCreateProcessW, (LPVOID*)&fpCreateProcessW) != MH_OK) {
             Core::Logger::Error("Hook CreateProcessW 失败");
+        }
+
+        // Hook CreateProcessA（补齐 ANSI 路径，降低子进程漏注入概率）
+        if (MH_CreateHookApi(L"kernel32.dll", "CreateProcessA",
+                             (LPVOID)DetourCreateProcessA, (LPVOID*)&fpCreateProcessA) != MH_OK) {
+            Core::Logger::Error("Hook CreateProcessA 失败");
         }
         
         // Hook GetQueuedCompletionStatus (ConnectEx 完成握手)

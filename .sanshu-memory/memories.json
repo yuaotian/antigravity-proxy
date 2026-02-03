@@ -1,0 +1,68 @@
+{
+  "version": "2.0",
+  "project_path": "E:\\ProjectCode\\C++Code\\antigravity-proxy",
+  "entries": [
+    {
+      "id": "d7c7e3d7-babf-468d-b467-5b2d43e32f8f",
+      "content": "用户约束：不要生成总结性Markdown文档；不要生成测试脚本；不要编译/运行（用户自行操作）。交互提问必须通过 zhi 工具。",
+      "content_normalized": "用户约束不要生成总结性markdown文档不要生成测试脚本不要编译/运行用户自行操作交互提问必须通过 zhi 工具",
+      "category": "Rule",
+      "created_at": "2026-02-03T11:28:47.984500900Z",
+      "updated_at": "2026-02-03T11:28:47.984501Z"
+    },
+    {
+      "id": "0b05ec1b-8477-41b3-84e6-a21ef140ca84",
+      "content": "用户强调：禁止生成总结性 Markdown/README；禁止生成测试脚本/测试代码；禁止编译与运行（用户自行编译/运行）。",
+      "content_normalized": "用户强调禁止生成总结性 markdown/readme禁止生成测试脚本/测试代码禁止编译与运行用户自行编译/运行",
+      "category": "Rule",
+      "created_at": "2026-02-03T11:28:47.984506700Z",
+      "updated_at": "2026-02-03T11:28:47.984506700Z"
+    },
+    {
+      "id": "7cdf9b7c-5e8e-4661-9d9c-22eb6ebb7c4f",
+      "content": "用户再次强调：不要生成总结性 Markdown 文档；不要生成测试脚本；不要编译或运行（用户自己编译/运行）。",
+      "content_normalized": "用户再次强调不要生成总结性 markdown 文档不要生成测试脚本不要编译或运行用户自己编译/运行",
+      "category": "Rule",
+      "created_at": "2026-02-03T11:28:47.984508900Z",
+      "updated_at": "2026-02-03T11:28:47.984509Z"
+    },
+    {
+      "id": "5298c96c-edcc-4d08-a476-9f75ca2ba021",
+      "content": "对话与文档措辞偏好：语气尽量像正常开发者口吻，整体正经但可以带一点小调皮，避免过度营销腔。",
+      "content_normalized": "对话与文档措辞偏好语气尽量像正常开发者口吻整体正经但可以带一点小调皮避免过度营销腔",
+      "category": "Preference",
+      "created_at": "2026-02-03T11:28:47.984606200Z",
+      "updated_at": "2026-02-03T11:28:47.984606300Z"
+    },
+    {
+      "id": "86b23f1e-79ac-4936-b561-516b4db28964",
+      "content": "用户说明：当前提供的长日志为“对方/朋友那台无法成功代理的机器”的运行日志（非用户自己机器）。",
+      "content_normalized": "用户说明当前提供的长日志为对方/朋友那台无法成功代理的机器的运行日志非用户自己机器",
+      "category": "Context",
+      "created_at": "2026-02-03T11:28:47.984765300Z",
+      "updated_at": "2026-02-03T11:28:47.984765400Z"
+    },
+    {
+      "id": "67160505-e2e4-4e95-b4ab-ef5b3ad2457c",
+      "content": "排障上下文：目标程序为 `Antigravity.exe` 与 `language_server_windows_x64.exe`；在国内环境必须走代理。对方机器移除本项目 DLL 后改用 Clash TUN 模式可正常访问，说明网络/Clash 本身可用，问题集中在 DLL Hook 代理路径（当前未代理 UDP/QUIC 的可能性很高）。",
+      "content_normalized": "排障上下文目标程序为 `antigravityexe` 与 `language_server_windows_x64exe`在国内环境必须走代理对方机器移除本项目 dll 后改用 clash tun 模式可正常访问说明网络/clash 本身可用问题集中在 dll hook 代理路径当前未代理 udp/quic 的可能性很高",
+      "category": "Context",
+      "created_at": "2026-02-03T11:28:47.984768400Z",
+      "updated_at": "2026-02-03T11:28:47.984768400Z"
+    },
+    {
+      "id": "0ddcdaac-9563-4e0b-a47d-de1a87fef19a",
+      "content": "acemcp 代码索引已启用 - 配置摘要: 文件扩展名=[\".py\", \".js\", \".ts\", \".jsx\", \".tsx\", \".java\", \".go\", \".rs\", \".cpp\", \".c\", \".h\", \".hpp\", \".cs\", \".rb\", \".php\", \".md\", \".txt\", \".json\", \".yaml\", \".yml\", \".toml\", \".xml\", \".html\", \".css\", \".scss\", \".sql\", \".sh\", \".bash\"], 排除模式=[\"node_modules\", \".git\", \"target\", \"dist\"], 批次大小=10, 最大行数/块=800",
+      "content_normalized": "acemcp 代码索引已启用 - 配置摘要 文件扩展名=py js ts jsx tsx java go rs cpp c h hpp cs rb php md txt json yaml yml toml xml html css scss sql sh bash 排除模式=node_modules git target dist 批次大小=10 最大行数/块=800",
+      "category": "Context",
+      "created_at": "2026-02-03T11:28:47.989762900Z",
+      "updated_at": "2026-02-03T11:28:47.989762900Z"
+    }
+  ],
+  "last_dedup_at": "2026-02-03T11:28:47.985421800Z",
+  "config": {
+    "similarity_threshold": 0.7,
+    "dedup_on_startup": true,
+    "enable_dedup": true
+  }
+}

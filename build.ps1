@@ -251,8 +251,8 @@ $configJson = @{
         "config" = $Config
         "arch" = $Arch
     }
-    # 日志等级：默认 info（更克制，减少刷屏/IO 开销）；需要更细粒度排障时可改为 debug
-    log_level = "info"
+    # 日志等级：默认 debug（排障更直观）；日常使用可改为 info 以减少刷屏/IO 开销
+    log_level = "debug"
     proxy = @{
         host = "127.0.0.1"
         port = 7890
@@ -274,7 +274,7 @@ $configJson = @{
         "Antigravity.exe"
     )
     proxy_rules = @{
-        allowed_ports = @(80, 443)
+        allowed_ports = @()
         dns_mode = "direct"
         ipv6_mode = "proxy"
         udp_mode = "block"
@@ -314,7 +314,7 @@ Antigravity-Proxy 是一个基于 MinHook 的 Windows DLL 代理注入工具。
         "port": 7890,              // 代理服务器端口
         "type": "socks5"           // 代理类型: socks5 或 http
     },
-    "log_level": "info",           // 日志等级: debug/info/warn/error (默认 info)
+    "log_level": "debug",          // 日志等级: debug/info/warn/error (默认 debug)
     "fake_ip": {
         "enabled": true,           // 是否启用 FakeIP 系统 (拦截 DNS 解析)
         "cidr": "198.18.0.0/15"       // FakeIP 分配的虚拟 IP 地址范围 (默认为基准测试保留网段)
@@ -331,7 +331,7 @@ Antigravity-Proxy 是一个基于 MinHook 的 Windows DLL 代理注入工具。
         "Antigravity.exe"
     ],
     "proxy_rules": {
-        "allowed_ports": [80, 443], // 端口白名单 (仅这些端口走代理, 空=全部)
+        "allowed_ports": [],         // 端口白名单 (空=全部)
         "dns_mode": "direct",       // DNS策略: direct(直连) 或 proxy(走代理)
         "ipv6_mode": "proxy",       // IPv6策略: proxy(走代理) / direct(直连) / block(阻止)
         "udp_mode": "block"         // UDP策略: block(默认, 阻断UDP以强制回退TCP) / direct(直连)
@@ -366,7 +366,7 @@ Test-NetConnection -ComputerName 127.0.0.1 -Port 7890
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| log_level | 日志等级 (debug/info/warn/error) | info |
+| log_level | 日志等级 (debug/info/warn/error) | debug |
 | proxy.host | 代理服务器地址 | 127.0.0.1 |
 | proxy.port | 代理服务器端口 | 7890 |
 | proxy.type | 代理类型 (socks5/http) | socks5 |
@@ -378,7 +378,7 @@ Test-NetConnection -ComputerName 127.0.0.1 -Port 7890
 | traffic_logging | 是否记录流量日志 | false |
 | child_injection | 是否注入子进程 | true |
 | target_processes | 目标进程列表 (空=全部) | [] |
-| proxy_rules.allowed_ports | 端口白名单 (空=全部) | [80, 443] |
+| proxy_rules.allowed_ports | 端口白名单 (空=全部) | [] |
 | proxy_rules.dns_mode | DNS策略 (direct/proxy) | direct |
 | proxy_rules.ipv6_mode | IPv6策略 (proxy/direct/block) | proxy |
 | proxy_rules.udp_mode | UDP策略 (block/direct) | block |

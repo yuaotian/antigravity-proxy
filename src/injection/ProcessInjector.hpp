@@ -76,15 +76,42 @@ namespace Injection {
             }
             
             // 步骤 5: 等待注入完成
-            WaitForSingleObject(hThread, 5000); // 最多等待 5 秒
-            
-            // 清理
+            DWORD waitRc = WaitForSingleObject(hThread, 5000); // 最多等待 5 秒
+
+            bool ok = false;
+            DWORD exitCode = 0;
+
+            if (waitRc == WAIT_OBJECT_0) {
+                // 注意：GetExitCodeThread 返回 DWORD；在 64 位进程中我们仅用它判断是否为 0（NULL）
+                if (GetExitCodeThread(hThread, &exitCode)) {
+                    ok = (exitCode != 0 && exitCode != STILL_ACTIVE);
+                } else {
+                    DWORD err = GetLastError();
+                    Core::Logger::Warn("ProcessInjector: 获取远程线程退出码失败 (GetExitCodeThread failed), err=" + std::to_string(err));
+                }
+            } else if (waitRc == WAIT_TIMEOUT) {
+                // 超时意味着远程线程可能仍在读取 remoteDllPath；此时释放远程内存可能导致 UAF
+                Core::Logger::Warn("ProcessInjector: 等待远程线程超时(5000ms)，注入结果未知；为避免 UAF 将不释放远程路径内存");
+            } else {
+                DWORD err = GetLastError();
+                Core::Logger::Error("ProcessInjector: 等待远程线程失败 (WaitForSingleObject failed), rc=" + std::to_string(waitRc) +
+                                    ", err=" + std::to_string(err));
+            }
+
+            // 清理：句柄必须关闭；远程路径内存仅在远程线程结束后释放，避免 UAF
             CloseHandle(hThread);
-            VirtualFreeEx(hProcess, remoteDllPath, 0, MEM_RELEASE);
-            
-            // 详细日志将在上层调用处 Hooks.cpp 中记录，此处保留简单的内部成功日志
-            Core::Logger::Info("ProcessInjector: 远程线程执行完成");
-            return true;
+            if (waitRc == WAIT_OBJECT_0) {
+                VirtualFreeEx(hProcess, remoteDllPath, 0, MEM_RELEASE);
+            }
+
+            if (ok) {
+                Core::Logger::Info("ProcessInjector: 注入成功 (LoadLibraryW 返回非空)");
+                return true;
+            }
+            if (waitRc == WAIT_OBJECT_0) {
+                Core::Logger::Error("ProcessInjector: 注入失败 (LoadLibraryW 返回 0)");
+            }
+            return false;
         }
         
         // 获取当前 DLL 的完整路径
