@@ -28,8 +28,8 @@ inline int RemainingTimeoutMs(const std::chrono::steady_clock::time_point& deadl
         WSASetLastError(WSAETIMEDOUT);
         return 0;
     }
-    if (remainMs > std::numeric_limits<int>::max()) {
-        return std::numeric_limits<int>::max();
+    if (remainMs > (std::numeric_limits<int>::max)()) {
+        return (std::numeric_limits<int>::max)();
     }
     return static_cast<int>(remainMs);
 }

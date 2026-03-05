@@ -41,6 +41,8 @@ if(MSVC)
     else()
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>")
     endif()
+    # 统一禁用 windows.h 的 min/max 宏，避免污染 C++ 标准库的 std::min/std::max
+    add_compile_definitions(NOMINMAX)
 endif()
 
 include(CMakePackageConfigHelpers)

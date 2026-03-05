@@ -158,7 +158,7 @@ namespace Network {
                 WSASetLastError(WSAETIMEDOUT);
                 return 0;
             }
-            if (remainMs > std::numeric_limits<int>::max()) {
+            if (remainMs > (std::numeric_limits<int>::max)()) {
                 return fallback;
             }
             const int remain = static_cast<int>(remainMs);
