@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/yuaotian/antigravity-proxy/actions"><img src="https://github.com/yuaotian/antigravity-proxy/actions/workflows/build.yml/badge.svg" alt="Build Status"/></a>
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="License"/></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg" alt="Platform"/>
+  <img src="https://img.shields.io/badge/platform-Windows%20x86%2Fx64%20%7C%20macOS%20launcher-lightgrey.svg" alt="Platform"/>
   <img src="https://img.shields.io/badge/C%2B%2B-17-00599C.svg" alt="C++17"/>
   <img src="https://img.shields.io/badge/hook-MinHook-orange.svg" alt="MinHook"/>
 </p>
@@ -32,6 +32,7 @@
 - [🔧 工作原理 / How It Works](#-工作原理--how-it-works)
 - [🛠️ 编译构建 / Build](#️-编译构建--build)
 - [📝 使用方法 / Usage](#-使用方法--usage)
+- [🍎 macOS 使用指南 / macOS Guide](#-macos-使用指南--macos-guide)
 - [🐧 WSL 环境使用指南 / WSL Guide](#-wsl-环境使用指南--wsl-guide)
 - [🚀 进阶玩法 / Advanced Usage](#-进阶玩法--advanced-usage)
 - [📄 许可证 / License](#-许可证--license)
@@ -160,6 +161,31 @@
 ## ⚡ Antigravity 快速开始 / Quick Start
 
 > 只想让 Antigravity 立刻能用？看这一节就够了。
+
+### macOS 快速开始
+
+macOS 不能直接使用 Windows 的 `version.dll` 注入方式。本仓库提供了 macOS 启动器：自动读取 Clash Verge/Mihomo 本地混合端口，并用 Chromium 代理参数与 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`GRPC_PROXY` 环境变量启动 Antigravity。
+
+```bash
+./scripts/macos-antigravity-proxy.sh doctor
+./scripts/macos-antigravity-proxy.sh restart
+```
+
+如果你使用旧版或独立安装的 **Antigravity IDE.app**：
+
+```bash
+./scripts/macos-antigravity-proxy.sh doctor --app ide
+./scripts/macos-antigravity-proxy.sh restart --app ide
+```
+
+如果你想关闭 Clash Verge TUN，改为 System Proxy：
+
+```bash
+./scripts/macos-antigravity-proxy.sh clash-verge use-system-proxy
+./scripts/macos-antigravity-proxy.sh system-proxy on
+```
+
+详细说明见 [docs/macos.md](docs/macos.md)。
 
 ### Step 1: 准备代理 / Prepare a Proxy
 

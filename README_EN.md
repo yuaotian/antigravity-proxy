@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/yuaotian/antigravity-proxy/actions"><img src="https://github.com/yuaotian/antigravity-proxy/actions/workflows/build.yml/badge.svg" alt="Build Status"/></a>
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="License"/></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg" alt="Platform"/>
+  <img src="https://img.shields.io/badge/platform-Windows%20x86%2Fx64%20%7C%20macOS%20launcher-lightgrey.svg" alt="Platform"/>
   <img src="https://img.shields.io/badge/C%2B%2B-17-00599C.svg" alt="C++17"/>
   <img src="https://img.shields.io/badge/hook-MinHook-orange.svg" alt="MinHook"/>
 </p>
@@ -32,6 +32,7 @@
 - [🔧 How It Works](#-how-it-works)
 - [🛠️ Build](#️-build)
 - [📝 Usage](#-usage)
+- [🍎 macOS Guide](#-macos-guide)
 - [🚀 Advanced Usage](#-advanced-usage)
 - [📄 License](#-license)
 - [👤 Author](#-author)
@@ -158,6 +159,31 @@ Have you ever encountered these situations?
 ## ⚡ Antigravity Quick Start
 
 > If you only care about getting Antigravity working right now, this is the shortest path.
+
+### macOS Quick Start
+
+macOS cannot use the Windows `version.dll` injection path directly. This repository includes an opt-in macOS launcher that detects the local Clash Verge/Mihomo mixed port and starts Antigravity with Chromium proxy flags plus `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`GRPC_PROXY` environment variables.
+
+```bash
+./scripts/macos-antigravity-proxy.sh doctor
+./scripts/macos-antigravity-proxy.sh restart
+```
+
+For **Antigravity IDE.app**:
+
+```bash
+./scripts/macos-antigravity-proxy.sh doctor --app ide
+./scripts/macos-antigravity-proxy.sh restart --app ide
+```
+
+To switch Clash Verge from TUN mode to macOS System Proxy:
+
+```bash
+./scripts/macos-antigravity-proxy.sh clash-verge use-system-proxy
+./scripts/macos-antigravity-proxy.sh system-proxy on
+```
+
+See [docs/macos_en.md](docs/macos_en.md) for details.
 
 ### Step 1: Prepare a Proxy
 
