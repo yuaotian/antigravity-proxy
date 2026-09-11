@@ -306,6 +306,10 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         g_shimModule = module;
         DisableThreadLibraryCalls(module);
+        // agy.exe normally imports dbghelp.dll without calling its symbol APIs.
+        // Load the proxy during process attach so hooks are installed before the
+        // CLI starts its first network request.
+        EnsureProxyLoadedForCli();
     }
     return TRUE;
 }

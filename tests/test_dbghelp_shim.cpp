@@ -16,6 +16,9 @@ int wmain(int argc, wchar_t** argv) {
     assert(argc == 2);
     const HMODULE shim = LoadLibraryW(argv[1]);
     assert(shim != nullptr);
+    // agy.exe may never call a DbgHelp export during normal startup. Loading the
+    // shim itself must therefore load the proxy core.
+    assert(GetModuleHandleW(L"antigravity_proxy.dll") != nullptr);
 
     constexpr std::array<const char*, 12> requiredExports = {
         "MiniDumpWriteDump",
@@ -40,9 +43,6 @@ int wmain(int argc, wchar_t** argv) {
         reinterpret_cast<SymGetOptionsFn>(GetProcAddress(shim, "SymGetOptions"));
     assert(getOptions != nullptr);
     (void)getOptions();
-    // agy.exe 首次调用导出函数时应加载同目录、唯一名称的代理主体。
-    assert(GetModuleHandleW(L"antigravity_proxy.dll") != nullptr);
-
     using UnDecorateSymbolNameFn = DWORD(WINAPI*)(PCSTR, PSTR, DWORD, DWORD);
     const auto undecorate = reinterpret_cast<UnDecorateSymbolNameFn>(
         GetProcAddress(shim, "UnDecorateSymbolName"));
