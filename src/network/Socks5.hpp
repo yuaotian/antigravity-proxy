@@ -17,6 +17,7 @@ namespace Network {
     namespace Socks5 {
         constexpr uint8_t VERSION = 0x05;
         constexpr uint8_t AUTH_NONE = 0x00;
+        constexpr uint8_t AUTH_USERPASS = 0x02;
         constexpr uint8_t CMD_CONNECT = 0x01;
         constexpr uint8_t CMD_UDP_ASSOCIATE = 0x03;
         constexpr uint8_t ATYP_IPV4 = 0x01;
@@ -92,7 +93,132 @@ namespace Network {
         }
 
     public:
-        // Execute SOCKS5 Handshake (No Auth)
+        /**
+         * 执行 SOCKS5 认证协商（支持 AUTH_NONE 与 RFC 1929 AUTH_USERPASS）
+         */
+        static bool Authenticate(SOCKET sock, const Core::ProxyConfig& config, int sendTimeoutMs, int recvTimeoutMs, const char* logPrefix = "SOCKS5") {
+            const bool hasAuth = (!config.username.empty() || !config.password.empty());
+            std::vector<uint8_t> authMethods;
+            authMethods.push_back(Socks5::AUTH_NONE);
+            if (hasAuth) {
+                authMethods.push_back(Socks5::AUTH_USERPASS);
+            }
+
+            std::vector<uint8_t> authRequest;
+            authRequest.push_back(Socks5::VERSION);
+            authRequest.push_back(static_cast<uint8_t>(authMethods.size()));
+            for (uint8_t m : authMethods) {
+                authRequest.push_back(m);
+            }
+
+            if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                Core::Logger::Debug(std::string(logPrefix) + ": [1/3] 发送认证协商, sock=" +
+                                    std::to_string((unsigned long long)sock) +
+                                    ", bytes=" + HexDump(authRequest.data(), authRequest.size(), 16));
+            }
+
+            if (!SocketIo::SendAll(sock, (const char*)authRequest.data(), (int)authRequest.size(), sendTimeoutMs)) {
+                int err = WSAGetLastError();
+                Core::Logger::Error(std::string(logPrefix) + ": [1/3] 发送认证协商失败, sock=" +
+                                    std::to_string((unsigned long long)sock) +
+                                    ", WSA错误码=" + std::to_string(err));
+                return false;
+            }
+
+            // Receive Auth Method Response
+            uint8_t authResponse[2] = {0, 0};
+            if (!ReadExact(sock, authResponse, 2, recvTimeoutMs)) {
+                int err = WSAGetLastError();
+                Core::Logger::Error(std::string(logPrefix) + ": [1/3] 读取认证响应失败, sock=" +
+                                    std::to_string((unsigned long long)sock) +
+                                    ", WSA错误码=" + std::to_string(err));
+                return false;
+            }
+
+            if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                Core::Logger::Debug(std::string(logPrefix) + ": [1/3] 收到认证响应, sock=" +
+                                    std::to_string((unsigned long long)sock) +
+                                    ", VER=" + std::to_string(authResponse[0]) +
+                                    ", METHOD=" + std::to_string(authResponse[1]) +
+                                    ", bytes=" + HexDump(authResponse, 2, 16));
+            }
+
+            if (authResponse[0] != Socks5::VERSION) {
+                Core::Logger::Error(std::string(logPrefix) + ": [1/3] 认证响应协议版本无效, sock=" +
+                                    std::to_string((unsigned long long)sock) +
+                                    ", 版本=" + std::to_string(authResponse[0]));
+                return false;
+            }
+
+            // RFC 1929: Username/Password Subnegotiation
+            if (authResponse[1] == Socks5::AUTH_USERPASS) {
+                if (!hasAuth) {
+                    Core::Logger::Error(std::string(logPrefix) + ": [1/3] 代理服务器要求用户名密码认证，但配置中未提供 credentials, sock=" +
+                                        std::to_string((unsigned long long)sock));
+                    return false;
+                }
+                const std::string& uname = config.username;
+                const std::string& passwd = config.password;
+                if (uname.size() > 255 || passwd.size() > 255) {
+                    Core::Logger::Error(std::string(logPrefix) + ": [1/3] 用户名或密码长度超出 255 字节限制");
+                    return false;
+                }
+                std::vector<uint8_t> userPassReq;
+                userPassReq.push_back(0x01); // subnegotiation version
+                userPassReq.push_back(static_cast<uint8_t>(uname.size()));
+                for (char c : uname) userPassReq.push_back(static_cast<uint8_t>(c));
+                userPassReq.push_back(static_cast<uint8_t>(passwd.size()));
+                for (char c : passwd) userPassReq.push_back(static_cast<uint8_t>(c));
+
+                if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                    Core::Logger::Debug(std::string(logPrefix) + ": [1/3] 发送账密认证请求, sock=" +
+                                        std::to_string((unsigned long long)sock) +
+                                        ", user=" + uname);
+                }
+
+                if (!SocketIo::SendAll(sock, (const char*)userPassReq.data(), (int)userPassReq.size(), sendTimeoutMs)) {
+                    int err = WSAGetLastError();
+                    Core::Logger::Error(std::string(logPrefix) + ": [1/3] 发送账密认证请求失败, sock=" +
+                                        std::to_string((unsigned long long)sock) +
+                                        ", WSA错误码=" + std::to_string(err));
+                    return false;
+                }
+
+                uint8_t upResp[2] = {0, 0};
+                if (!ReadExact(sock, upResp, 2, recvTimeoutMs)) {
+                    int err = WSAGetLastError();
+                    Core::Logger::Error(std::string(logPrefix) + ": [1/3] 读取账密认证响应失败, sock=" +
+                                        std::to_string((unsigned long long)sock) +
+                                        ", WSA错误码=" + std::to_string(err));
+                    return false;
+                }
+                if (upResp[1] != 0x00) {
+                    Core::Logger::Error(std::string(logPrefix) + ": [1/3] 用户名或密码认证失败, sock=" +
+                                        std::to_string((unsigned long long)sock) +
+                                        ", status=" + std::to_string(upResp[1]) +
+                                        ", 请检查 config.json 中的 proxy.username 和 proxy.password");
+                    return false;
+                }
+                if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
+                    Core::Logger::Debug(std::string(logPrefix) + ": [1/3] 用户名密码认证成功, sock=" +
+                                        std::to_string((unsigned long long)sock));
+                }
+                return true;
+            }
+
+            if (authResponse[1] == Socks5::AUTH_NONE) {
+                return true;
+            }
+
+            Core::Logger::Error(std::string(logPrefix) + ": [1/3] 不支持的认证方式, sock=" +
+                                std::to_string((unsigned long long)sock) +
+                                ", 版本=" + std::to_string(authResponse[0]) +
+                                ", 方法=" + std::to_string(authResponse[1]) +
+                                ", bytes=" + HexDump(authResponse, 2, 16));
+            return false;
+        }
+
+        // Execute SOCKS5 Handshake (Supports No Auth & User/Pass Auth)
         // Returns true if tunnel is established
         static bool Handshake(SOCKET sock, const std::string& targetHost, uint16_t targetPort, int handshakeBudgetMs = -1) {
             auto& config = Core::Config::Instance();
@@ -127,46 +253,12 @@ namespace Network {
                                     ", 预算=" + std::to_string(handshakeBudgetMs) + "ms");
             }
 
-            // 1. Auth Method Negotiation
-            // +----+----------+----------+
-            // |VER | NMETHODS | METHODS  |
-            // +----+----------+----------+
-            // | 1  |    1     | 1 to 255 |
-            // +----+----------+----------+
-            uint8_t authRequest[3] = { Socks5::VERSION, 0x01, Socks5::AUTH_NONE };
-            if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
-                Core::Logger::Debug("SOCKS5: [1/3] 发送认证协商, sock=" + std::to_string((unsigned long long)sock) +
-                                    ", bytes=" + HexDump(authRequest, 3, 16));
-            }
+            // 1. Auth Method Negotiation & Subnegotiation
             const int authReqTimeout = stepTimeout(sendTimeout, "[1/3] 发送认证协商");
             if (authReqTimeout <= 0) return false;
-            if (!SocketIo::SendAll(sock, (const char*)authRequest, 3, authReqTimeout)) {
-                int err = WSAGetLastError();
-                Core::Logger::Error("SOCKS5: [1/3] 发送认证协商失败, sock=" + std::to_string((unsigned long long)sock) +
-                                    ", WSA错误码=" + std::to_string(err));
-                return false;
-            }
-            
-            // Receive Auth Method Response
-            uint8_t authResponse[2];
             const int authRespTimeout = stepTimeout(recvTimeout, "[1/3] 读取认证响应");
             if (authRespTimeout <= 0) return false;
-            if (!ReadExact(sock, authResponse, 2, authRespTimeout)) {
-                int err = WSAGetLastError();
-                Core::Logger::Error("SOCKS5: [1/3] 读取认证响应失败, sock=" + std::to_string((unsigned long long)sock) +
-                                    ", WSA错误码=" + std::to_string(err));
-                return false;
-            }
-            if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
-                Core::Logger::Debug("SOCKS5: [1/3] 收到认证响应, sock=" + std::to_string((unsigned long long)sock) +
-                                    ", VER=" + std::to_string(authResponse[0]) + ", METHOD=" + std::to_string(authResponse[1]) +
-                                    ", bytes=" + HexDump(authResponse, 2, 16));
-            }
-            
-            if (authResponse[0] != Socks5::VERSION || authResponse[1] != Socks5::AUTH_NONE) {
-                Core::Logger::Error("SOCKS5: [1/3] 不支持的认证方式, sock=" + std::to_string((unsigned long long)sock) +
-                                    ", 版本=" + std::to_string(authResponse[0]) + ", 方法=" + std::to_string(authResponse[1]) +
-                                    ", bytes=" + HexDump(authResponse, 2, 16));
+            if (!Authenticate(sock, config.proxy, authReqTimeout, authRespTimeout, "SOCKS5")) {
                 return false;
             }
             

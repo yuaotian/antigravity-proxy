@@ -395,6 +395,30 @@
                   <div class="field-error" data-error-for="proxy.type"></div>
                 </div>
 
+                <div class="field">
+                  <label class="field-label" for="proxy_username">
+                    <span class="font-mono">proxy.username</span>
+                    <span class="tip">
+                      <i class="fa-solid fa-circle-info"></i>
+                      <span class="tip-pop">作用：上游代理用户名（可选）。取值：字符串。影响：用于 HTTP Basic 或 SOCKS5 账密认证。建议：免密代理留空。</span>
+                    </span>
+                  </label>
+                  <input id="proxy_username" class="field-input" type="text" data-bind="proxy.username" placeholder="可选，免密代理留空" />
+                  <div class="field-error" data-error-for="proxy.username"></div>
+                </div>
+
+                <div class="field">
+                  <label class="field-label" for="proxy_password">
+                    <span class="font-mono">proxy.password</span>
+                    <span class="tip">
+                      <i class="fa-solid fa-circle-info"></i>
+                      <span class="tip-pop">作用：上游代理密码（可选）。取值：字符串。影响：用于 HTTP Basic 或 SOCKS5 账密认证。建议：免密代理留空。</span>
+                    </span>
+                  </label>
+                  <input id="proxy_password" class="field-input" type="password" data-bind="proxy.password" placeholder="可选，免密代理留空" />
+                  <div class="field-error" data-error-for="proxy.password"></div>
+                </div>
+
                 <!-- 快速填充 -->
                 <div class="field md:col-span-2">
                   <label class="field-label">
@@ -1541,7 +1565,7 @@
             arch: "x64",
           },
           log_level: "info",
-          proxy: { host: "127.0.0.1", port: 7890, type: "socks5" },
+          proxy: { host: "127.0.0.1", port: 7890, type: "socks5", username: "", password: "" },
           fake_ip: { enabled: true, cidr: "198.18.0.0/15" },
           timeout: { connect: 5000, send: 5000, recv: 5000 },
           updates: {
@@ -1637,6 +1661,8 @@
             // 对齐后端：允许 0（禁用代理）；<0 或 >65535 回退 7890
             out.proxy.port = port < 0 || port > 65535 ? base.proxy.port : port;
           }
+          out.proxy.username = typeof p.username === "string" ? p.username : (typeof p.user === "string" ? p.user : "");
+          out.proxy.password = typeof p.password === "string" ? p.password : (typeof p.pass === "string" ? p.pass : "");
 
           // fake_ip
           const fip = j.fake_ip && typeof j.fake_ip === "object" ? j.fake_ip : {};
@@ -1770,6 +1796,8 @@
           "proxy.host",
           "proxy.port",
           "proxy.type",
+          "proxy.username",
+          "proxy.password",
           "fake_ip.enabled",
           "fake_ip.cidr",
           "timeout.connect",
@@ -1816,6 +1844,8 @@
           "proxy.host",
           "proxy.port",
           "proxy.type",
+          "proxy.username",
+          "proxy.password",
           "fake_ip.enabled",
           "fake_ip.cidr",
           "timeout.connect",
@@ -2018,6 +2048,8 @@
           outProxy.host = state.form.proxy.host;
           outProxy.port = state.form.proxy.port;
           outProxy.type = state.form.proxy.type;
+          outProxy.username = state.form.proxy.username ?? "";
+          outProxy.password = state.form.proxy.password ?? "";
 
           // fake_ip
           const outFakeIp = ensureObjIn(out, "fake_ip");

@@ -20,6 +20,8 @@ namespace Core {
         std::string host = "127.0.0.1";
         int port = 7890;
         std::string type = "socks5";
+        std::string username;
+        std::string password;
     };
 
     struct FakeIPConfig {
@@ -760,6 +762,10 @@ namespace Core {
                     proxy.host = p.value("host", "127.0.0.1");
                     proxy.port = p.value("port", 7890);
                     proxy.type = p.value("type", "socks5");
+                    if (p.contains("username")) proxy.username = p.value("username", "");
+                    else if (p.contains("user")) proxy.username = p.value("user", "");
+                    if (p.contains("password")) proxy.password = p.value("password", "");
+                    else if (p.contains("pass")) proxy.password = p.value("pass", "");
                 }
 
                 // 配置校验：统一 proxy.type 大小写，并对关键字段做防御性修正，避免运行期异常
@@ -1064,8 +1070,13 @@ namespace Core {
                     Logger::Info("已加载目标进程列表, 共 " + std::to_string(targetProcesses.size()) + " 项");
                 }
 
+                std::string authLog;
+                if (!proxy.username.empty() || !proxy.password.empty()) {
+                    authLog = ", auth=" + (proxy.username.empty() ? "(none)" : proxy.username) + ":***";
+                }
                 Logger::Info("配置: proxy=" + proxy.host + ":" + std::to_string(proxy.port) +
                              " type=" + proxy.type +
+                             authLog +
                              ", fake_ip=" + std::string(fakeIp.enabled ? "true" : "false") +
                              ", child_injection=" + std::string(childInjection ? "true" : "false") +
                              ", child_injection_mode=" + childInjectionMode +

@@ -95,30 +95,15 @@ namespace Network {
             return false;
         }
 
-        // 协商 AUTH_NONE
+        // 协商认证（支持 AUTH_NONE 与 RFC 1929 AUTH_USERPASS）
+        inline bool NegotiateAuth(SOCKET tcpSock, const Core::ProxyConfig& config, int sendTimeoutMs, int recvTimeoutMs) {
+            return Socks5Client::Authenticate(tcpSock, config, sendTimeoutMs, recvTimeoutMs, "SOCKS5 UDP");
+        }
+
+        // 保持向后兼容的无认证版本
         inline bool NegotiateNoAuth(SOCKET tcpSock, int sendTimeoutMs, int recvTimeoutMs) {
-            uint8_t authRequest[3] = { Socks5::VERSION, 0x01, Socks5::AUTH_NONE };
-            if (!SocketIo::SendAll(tcpSock, (const char*)authRequest, 3, sendTimeoutMs)) {
-                int err = WSAGetLastError();
-                Core::Logger::Error("SOCKS5 UDP: 发送认证协商失败, sock=" + std::to_string((unsigned long long)tcpSock) +
-                                    ", WSA错误码=" + std::to_string(err));
-                return false;
-            }
-            uint8_t authResp[2] = {0, 0};
-            if (!SocketIo::RecvExact(tcpSock, authResp, 2, recvTimeoutMs)) {
-                int err = WSAGetLastError();
-                Core::Logger::Error("SOCKS5 UDP: 读取认证响应失败, sock=" + std::to_string((unsigned long long)tcpSock) +
-                                    ", WSA错误码=" + std::to_string(err));
-                return false;
-            }
-            if (authResp[0] != Socks5::VERSION || authResp[1] != Socks5::AUTH_NONE) {
-                Core::Logger::Error("SOCKS5 UDP: 认证协商失败, sock=" + std::to_string((unsigned long long)tcpSock) +
-                                    ", VER=" + std::to_string(authResp[0]) +
-                                    ", METHOD=" + std::to_string(authResp[1]) +
-                                    ", bytes=" + HexDump(authResp, 2, 16));
-                return false;
-            }
-            return true;
+            Core::ProxyConfig emptyConfig{};
+            return Socks5Client::Authenticate(tcpSock, emptyConfig, sendTimeoutMs, recvTimeoutMs, "SOCKS5 UDP");
         }
 
         struct UdpAssociateResult {
@@ -143,7 +128,7 @@ namespace Network {
                 Core::Logger::Debug("SOCKS5 UDP: 开始 UDP Associate, sock=" + std::to_string((unsigned long long)tcpSock));
             }
 
-            if (!NegotiateNoAuth(tcpSock, sendTimeout, recvTimeout)) {
+            if (!NegotiateAuth(tcpSock, config.proxy, sendTimeout, recvTimeout)) {
                 return false;
             }
 

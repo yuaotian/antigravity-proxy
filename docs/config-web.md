@@ -31,7 +31,7 @@
   - `_build`：`{ date, config, arch }`（构建/导出时间与构建参数）
 - **核心配置**
   - `log_level`：`debug/info/warn/error`
-  - `proxy`：`{ host, port, type }`
+  - `proxy`：`{ host, port, type, username, password }`
   - `fake_ip`：`{ enabled, cidr }`
   - `timeout`：`{ connect, send, recv }`（毫秒）
   - `traffic_logging`：布尔

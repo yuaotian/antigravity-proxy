@@ -240,4 +240,14 @@ if(BUILD_TESTS)
     NAME dbghelp_shim_tests
     COMMAND dbghelp_shim_tests "$<TARGET_FILE:dbghelp>"
   )
+
+  add_executable(proxy_auth_tests
+    "tests/test_proxy_auth.cpp"
+  )
+  target_include_directories(proxy_auth_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(proxy_auth_tests PRIVATE ws2_32)
+  add_test(NAME proxy_auth_tests COMMAND proxy_auth_tests)
 endif()

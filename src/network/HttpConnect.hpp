@@ -23,6 +23,54 @@ namespace Network {
     class HttpConnectClient {
     public:
         /**
+         * Base64 字符串编码
+         */
+        static std::string Base64Encode(const std::string& input) {
+            static constexpr char kBase64Chars[] =
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                "abcdefghijklmnopqrstuvwxyz"
+                "0123456789+/";
+
+            std::string ret;
+            int i = 0;
+            unsigned char char_array_3[3];
+            unsigned char char_array_4[4];
+            size_t in_len = input.size();
+            const char* bytes_to_encode = input.data();
+
+            while (in_len--) {
+                char_array_3[i++] = *(bytes_to_encode++);
+                if (i == 3) {
+                    char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+                    char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+                    char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+                    char_array_4[3] = char_array_3[2] & 0x3f;
+
+                    for (i = 0; i < 4; i++)
+                        ret += kBase64Chars[char_array_4[i]];
+                    i = 0;
+                }
+            }
+
+            if (i) {
+                for (int j = i; j < 3; j++)
+                    char_array_3[j] = '\0';
+
+                char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+                char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+                char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+
+                for (int j = 0; j < i + 1; j++)
+                    ret += kBase64Chars[char_array_4[j]];
+
+                while (i++ < 3)
+                    ret += '=';
+            }
+
+            return ret;
+        }
+
+        /**
          * 执行 HTTP CONNECT 握手
          * @param sock 已连接到代理服务器的 socket
          * @param targetHost 目标主机 (域名或IP)
@@ -35,8 +83,10 @@ namespace Network {
                                     ", 目标=" + targetHost + ":" + std::to_string(targetPort));
             }
 
+            auto& config = Core::Config::Instance();
+
             // 构造 CONNECT 请求
-            // 格式: CONNECT host:port HTTP/1.1\r\nHost: host:port\r\n\r\n
+            // 格式: CONNECT host:port HTTP/1.1\r\nHost: host:port\r\n[Proxy-Authorization: Basic ...\r\n]\r\n
             std::string hostForHeader = targetHost;
             in6_addr addr6{};
             if (inet_pton(AF_INET6, targetHost.c_str(), &addr6) == 1) {
@@ -46,10 +96,14 @@ namespace Network {
             std::ostringstream request;
             request << "CONNECT " << hostForHeader << ":" << targetPort << " HTTP/1.1\r\n";
             request << "Host: " << hostForHeader << ":" << targetPort << "\r\n";
+            if (!config.proxy.username.empty() || !config.proxy.password.empty()) {
+                std::string credentials = config.proxy.username + ":" + config.proxy.password;
+                std::string encoded = Base64Encode(credentials);
+                request << "Proxy-Authorization: Basic " << encoded << "\r\n";
+            }
             request << "\r\n";
             
             std::string requestStr = request.str();
-            auto& config = Core::Config::Instance();
             const int recvTimeout = NormalizeTimeoutMs(config.timeout.recv_ms);
             const int sendTimeout = NormalizeTimeoutMs(config.timeout.send_ms);
             if (handshakeBudgetMs <= 0) {
@@ -123,9 +177,15 @@ namespace Network {
             }
             
             if (statusCode != 200) {
-                Core::Logger::Error("HTTP CONNECT: 代理返回状态码 " + std::to_string(statusCode) +
-                                    ", sock=" + std::to_string((unsigned long long)sock) +
-                                    ", line=\"" + FirstLine(response) + "\"");
+                if (statusCode == 407) {
+                    Core::Logger::Error("HTTP CONNECT: 代理需要身份认证或认证失败 (407 Proxy Authentication Required), sock=" +
+                                        std::to_string((unsigned long long)sock) +
+                                        ", 请检查 config.json 中的 proxy.username 和 proxy.password 配置");
+                } else {
+                    Core::Logger::Error("HTTP CONNECT: 代理返回状态码 " + std::to_string(statusCode) +
+                                        ", sock=" + std::to_string((unsigned long long)sock) +
+                                        ", line=\"" + FirstLine(response) + "\"");
+                }
                 Core::Logger::Error("HTTP CONNECT: 响应内容(前256B): " + response.substr(0, 256));
                 Core::Logger::Error("HTTP CONNECT: 响应摘要(hex前64B): " +
                                     HexDump((const uint8_t*)response.data(), response.size(), 64));
