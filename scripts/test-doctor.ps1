@@ -433,6 +433,27 @@ Assert-True -Name "缺少 IDE 命令行时不会误报安装成功" -Condition (
     ($extCodes -contains "ExtensionCliMissing" -or $extCodes -contains "ExtensionVsixNotFound") -and
     -not ($extCodes -contains "ExtensionInstalled"))
 
+# 回归：真实 IDE 2.6.0 命令行安装成功时也会向 stderr 输出告警；PS 5.1 + $ErrorActionPreference=Stop 下
+# 曾把它当成终止错误，导致部署在插件安装处中断。模拟 stderr 告警 + 退出码，验证只按退出码判定
+$bin13 = Join-Path $ide13 "bin"
+New-Item -ItemType Directory -Path $bin13 -Force | Out-Null
+$fakeCli13 = Join-Path $bin13 "antigravity-ide.cmd"
+$fakeVsix13 = Join-Path $script:FixtureRoot "fake-extension.vsix"
+Set-Content -LiteralPath $fakeVsix13 -Value "stub" -Encoding ASCII
+function Find-ExtensionVsix { return $fakeVsix13 }
+
+Reset-State
+Set-Content -LiteralPath $fakeCli13 -Encoding ASCII -Value "@echo off`r`necho [createInstance] warning from IDE cli 1>&2`r`necho installed`r`nexit /b 0"
+$threw13 = $false
+try { Install-IdeExtension -BaseDir $ide13 } catch { $threw13 = $true }
+Assert-True -Name "IDE 命令行输出 stderr 告警时不中断部署" -Condition (-not $threw13)
+Assert-HasCode -Name "stderr 告警 + 退出码 0 判定为安装成功" -Code "ExtensionInstalled" -Level "Pass"
+
+Reset-State
+Set-Content -LiteralPath $fakeCli13 -Encoding ASCII -Value "@echo off`r`necho install failed 1>&2`r`nexit /b 3"
+Install-IdeExtension -BaseDir $ide13
+Assert-HasCode -Name "退出码非 0 判定为安装失败并告警" -Code "ExtensionInstallFailed" -Level "Warn"
+
 Reset-State
 
 # ---------------------------------------------------------------------------

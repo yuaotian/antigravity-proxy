@@ -1008,14 +1008,24 @@ function Install-IdeExtension {
         Add-Finding -Level "Warn" -Code "ExtensionCliMissing" -Message "IDE 命令行工具不存在: $cli" -Hint $manualHint
         return
     }
-    $output = & $cli --install-extension $vsix --force 2>&1 | ForEach-Object { [string]$_ }
-    if ($LASTEXITCODE -eq 0) {
+    # IDE 命令行会向 stderr 输出无害告警（实测 2.6.0：antigravityAnalytics ... NOT registered）。PS 5.1 下 2>&1
+    # 会把每行 stderr 包装成 NativeCommandError，在脚本级 $ErrorActionPreference=Stop 时直接中断整个部署；
+    # 这里临时改为 Continue，只以退出码判定成败
+    $prevErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & $cli --install-extension $vsix --force 2>&1 | ForEach-Object { [string]$_ }
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevErrorAction
+    }
+    if ($exitCode -eq 0) {
         Add-Finding -Level "Pass" -Code "ExtensionInstalled" `
             -Message "已安装 IDE 配套插件（底部状态栏 + 配置面板 + 补丁守护）；运行中的 IDE 会自动加载，未运行则下次启动生效。"
     } else {
         $tail = (@($output) | Select-Object -Last 2) -join " "
         Add-Finding -Level "Warn" -Code "ExtensionInstallFailed" `
-            -Message ("IDE 配套插件安装失败（退出码 {0}）：{1}" -f $LASTEXITCODE, $tail) -Hint $manualHint
+            -Message ("IDE 配套插件安装失败（退出码 {0}）：{1}" -f $exitCode, $tail) -Hint $manualHint
     }
 }
 
