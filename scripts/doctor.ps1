@@ -971,8 +971,11 @@ function Report-RestartNeed {
 # ---------------------------------------------------------------------------
 
 function Find-ExtensionVsix {
-    # 发布包内（与 doctor.ps1 同级）与源码仓内（scripts\ → output\）两种布局
+    # 插件与 version.dll 同在 ide\ 目录：发布包内（doctor.ps1 同级的 ide\）与源码仓内（scripts\ → output\ide\）；
+    # 末两项兼容旧版发布包（插件曾放在包根目录）
     $candidates = @(
+        (Join-Path $PSScriptRoot "ide\antigravity-proxy.vsix"),
+        (Join-Path $PSScriptRoot "..\output\ide\antigravity-proxy.vsix"),
         (Join-Path $PSScriptRoot "antigravity-proxy.vsix"),
         (Join-Path $PSScriptRoot "..\output\antigravity-proxy.vsix")
     )

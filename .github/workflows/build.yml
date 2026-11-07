@@ -58,6 +58,16 @@ jobs:
         if-no-files-found: error
         retention-days: 7
 
+    # IDE 插件单独上传一份，便于直接下载测试（VSIX 已是压缩包，不再二次压缩）
+    - name: 上传 IDE 插件
+      uses: actions/upload-artifact@v7
+      with:
+        name: antigravity-proxy-v${{ env.BUILD_VERSION }}-ide-extension-win-${{ matrix.arch }}
+        path: output/ide/antigravity-proxy.vsix
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 7
+
     - name: 上传 CLI 构建产物
       uses: actions/upload-artifact@v7
       with:

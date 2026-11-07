@@ -119,8 +119,10 @@ jobs:
 
         $ideZip = Join-Path $packageDir "antigravity-proxy-$($env:RELEASE_TAG)-ide-win-$($env:TARGET_ARCH).zip"
         $cliZip = Join-Path $packageDir "antigravity-proxy-$($env:RELEASE_TAG)-cli-win-$($env:TARGET_ARCH).zip"
+        $vsix = Join-Path $packageDir "antigravity-proxy-$($env:RELEASE_TAG)-ide-extension-win-$($env:TARGET_ARCH).vsix"
         "ide_zip_path=$ideZip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         "cli_zip_path=$cliZip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "vsix_path=$vsix" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
     - name: 上传 IDE 打包文件
       uses: actions/upload-artifact@v7
@@ -136,6 +138,16 @@ jobs:
       with:
         name: release-asset-cli-${{ matrix.arch }}
         path: ${{ steps.package.outputs.cli_zip_path }}
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 1
+
+    # IDE 插件单独作为 Release 资产（VSIX 已是 Deflate 压缩包，不再二次压缩）
+    - name: 上传 IDE 插件
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-asset-vsix-${{ matrix.arch }}
+        path: ${{ steps.package.outputs.vsix_path }}
         if-no-files-found: error
         compression-level: 0
         retention-days: 1
@@ -403,6 +415,15 @@ jobs:
         pattern: release-asset-*
         merge-multiple: true
 
+    # 生成 SHA256 校验清单（sha256sum 标准格式），供在线安装脚本校验镜像下载的文件完整性
+    - name: 生成校验清单
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd release-assets
+        sha256sum *.zip *.vsix > SHA256SUMS.txt
+        cat SHA256SUMS.txt
+
     # 创建/更新 Release，上传打包产物并使用生成的发布说明
     - name: 发布 GitHub Release
       uses: softprops/action-gh-release@v3
@@ -410,7 +431,10 @@ jobs:
         tag_name: ${{ needs.build.outputs.release_tag }}
         name: ${{ needs.build.outputs.release_tag }}
         target_commitish: ${{ github.sha }}
-        files: release-assets/*.zip
+        files: |
+          release-assets/*.zip
+          release-assets/*.vsix
+          release-assets/SHA256SUMS.txt
         fail_on_unmatched_files: true
         body: ${{ steps.changelog.outputs.body }}
 

@@ -33,8 +33,9 @@ $requiredFiles = @(
     "cli\config.json",
     "config-web.html",
     "使用说明.md",
-    # IDE 配套插件（状态栏 + 配置面板 + 补丁守护），仅随 IDE 包发布
-    "antigravity-proxy.vsix"
+    # IDE 配套插件（状态栏 + 配置面板 + 补丁守护）：位于 ide\，随 version.dll 一起部署，
+    # DLL 在 IDE 主进程中检测到插件未安装时据此提示安装
+    "ide\antigravity-proxy.vsix"
 )
 foreach ($relativePath in $requiredFiles) {
     $path = Join-Path $OutputDir $relativePath
@@ -72,6 +73,8 @@ New-Item -ItemType Directory -Path $DestinationDir -Force | Out-Null
 $stagingRoot = Join-Path $DestinationDir ".package-$Arch-$([guid]::NewGuid().ToString('N'))"
 $ideZip = Join-Path $DestinationDir "antigravity-proxy-$tag-ide-win-$Arch.zip"
 $cliZip = Join-Path $DestinationDir "antigravity-proxy-$tag-cli-win-$Arch.zip"
+# 插件单独作为 Release 资产发布（VSIX 本身即 Deflate 压缩包），便于已部署 DLL 的用户直接安装/升级插件
+$vsixAsset = Join-Path $DestinationDir "antigravity-proxy-$tag-ide-extension-win-$Arch.vsix"
 
 try {
     foreach ($product in @("ide", "cli")) {
@@ -95,16 +98,12 @@ try {
         foreach ($doctorFile in $doctorFiles) {
             Copy-Item -LiteralPath (Join-Path $doctorScriptDir $doctorFile) -Destination $productStage -Force
         }
-        # IDE 配套插件放在包根目录（不能放进 ide\：setup 同步时会把 ide\ 下所有文件复制进安装目录）；
-        # doctor.ps1 -Action Setup 会自动查找同级的 antigravity-proxy.vsix 并安装。CLI 无插件能力，不打入。
-        if ($product -eq "ide") {
-            Copy-Item -LiteralPath (Join-Path $OutputDir "antigravity-proxy.vsix") -Destination $productStage -Force
-        }
-
         $zipPath = if ($product -eq "ide") { $ideZip } else { $cliZip }
         Compress-Archive -Path (Join-Path $productStage "*") -DestinationPath $zipPath -Force
         Write-Host "[打包] 已生成 $product 产物: $zipPath"
     }
+    Copy-Item -LiteralPath (Join-Path $OutputDir "ide\antigravity-proxy.vsix") -Destination $vsixAsset -Force
+    Write-Host "[打包] 已生成 IDE 插件资产: $vsixAsset"
 } finally {
     if (Test-Path -LiteralPath $stagingRoot) {
         Remove-Item -LiteralPath $stagingRoot -Recurse -Force
@@ -114,4 +113,5 @@ try {
 [PSCustomObject]@{
     IdeZip = $ideZip
     CliZip = $cliZip
+    Vsix   = $vsixAsset
 }

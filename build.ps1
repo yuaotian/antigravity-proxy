@@ -308,10 +308,15 @@ if ($RunTests) {
 
 Write-Step "查找编译产物..."
 
+# 排除 VSIX 暂存目录（其 payload\version.dll 是上一次构建的副本，若被选中会把旧 DLL 当作本次产物循环输出），
+# 并按修改时间取最新的编译产物
+$isBuildOutput = { $_.FullName -notmatch '\\ide-extension-stage\\' }
 $dllPattern = if ($Config -eq "Debug") { "version*.dll" } else { "version.dll" }
-$dllPath = Get-ChildItem -Path $BuildDir -Recurse -Filter $dllPattern | Select-Object -First 1
+$dllPath = Get-ChildItem -Path $BuildDir -Recurse -Filter $dllPattern | Where-Object $isBuildOutput |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
 $dbghelpPattern = if ($Config -eq "Debug") { "dbghelp*.dll" } else { "dbghelp.dll" }
-$dbghelpPath = Get-ChildItem -Path $BuildDir -Recurse -Filter $dbghelpPattern | Select-Object -First 1
+$dbghelpPath = Get-ChildItem -Path $BuildDir -Recurse -Filter $dbghelpPattern | Where-Object $isBuildOutput |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
 if (-not $dllPath) {
     Write-Error "未找到编译产物 DLL"
@@ -500,7 +505,8 @@ FAILED_PRECONDITION (code 400): User location is not supported for the API use.
 - **Linux / WSL 用户**：运行 `./setup.sh`（或 `bash launcher/install-linux.sh`）即可安装桌面菜单并启用防更新自愈守护。
 
 #### 方式 B：手动复制部署
-- Antigravity 桌面端/IDE：只复制 `ide/` 内的 `version.dll` 与 `config.json` 到主程序目录。
+- Antigravity 桌面端/IDE：复制 `ide/` 内的全部文件（`version.dll`、`config.json`、`antigravity-proxy.vsix`）到主程序目录；
+  Antigravity IDE 启动后若未安装配套插件，会提示一键安装（状态栏 + 可视化设置 + 更新后自动修复）。
 - Antigravity CLI：只复制 `cli/` 内的 `dbghelp.dll`、`antigravity_proxy.dll` 与 `config.json` 到 `agy.exe` 目录。
 
 两个目录不得混合复制。桌面端不需要 `dbghelp.dll`。
@@ -778,6 +784,10 @@ if (Test-Path $extSrc) {
     Copy-Item -LiteralPath (Join-Path $extSrc "lib") -Destination $extRoot -Recurse -Force
     Copy-Item -LiteralPath (Join-Path $extSrc "media") -Destination $extRoot -Recurse -Force
     Remove-Item -LiteralPath (Join-Path $extRoot "media\icon.svg") -Force -ErrorAction SilentlyContinue
+    # 多语言清单（命令名/设置说明）：package.nls.json 为英文默认，另含 zh-cn / ru
+    Get-ChildItem -LiteralPath $extSrc -Filter "package.nls*.json" | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $extRoot -Force
+    }
 
     # 2) 共享配置核心：Webview 与 Host 共用 media/config-core.js（唯一源文件 resources/shared/config-core.js）
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "resources\shared\config-core.js") -Destination (Join-Path $extRoot "media\config-core.js") -Force
@@ -800,6 +810,15 @@ if (Test-Path $extSrc) {
     $pkgText = [regex]::Replace($pkgText, '"version":\s*"[^"]*"', ('"version": "' + $extVersion + '"'), 1)
     [IO.File]::WriteAllText((Join-Path $extRoot "package.json"), $pkgText, $utf8NoBom)
     $pkg = $pkgText | ConvertFrom-Json
+    # package.json 中的 %key% 占位按英文默认清单解析，供 VSIX 清单（扩展列表展示）使用
+    $nlsPath = Join-Path $extSrc "package.nls.json"
+    $nls = if (Test-Path $nlsPath) { [IO.File]::ReadAllText($nlsPath, $utf8NoBom) | ConvertFrom-Json } else { $null }
+    $resolveNls = {
+        param([string]$value)
+        if ($nls -and $value -match '^%(.+)%$' -and $nls.PSObject.Properties[$Matches[1]]) { return [string]$nls.($Matches[1]) }
+        return $value
+    }
+    $pkgDescription = & $resolveNls $pkg.description
 
     $readme = @"
 # Antigravity Proxy
@@ -821,7 +840,7 @@ Antigravity-Proxy 的 IDE 配套插件：
   <Metadata>
     <Identity Language="en-US" Id="$($pkg.name)" Version="$extVersion" Publisher="$($pkg.publisher)" />
     <DisplayName>$($pkg.displayName)</DisplayName>
-    <Description xml:space="preserve">$([System.Security.SecurityElement]::Escape($pkg.description))</Description>
+    <Description xml:space="preserve">$([System.Security.SecurityElement]::Escape($pkgDescription))</Description>
     <Tags>proxy,antigravity,socks5</Tags>
     <Categories>Other</Categories>
     <GalleryFlags>Public</GalleryFlags>
@@ -863,9 +882,13 @@ Antigravity-Proxy 的 IDE 配套插件：
     [IO.File]::WriteAllText((Join-Path $extStage "[Content_Types].xml"), $contentTypes, $utf8NoBom)
 
     # 6) 写出 VSIX（zip，条目名统一为 "/" 分隔）
+    # 输出到 ide\ 目录：随 version.dll 一起部署到安装目录，DLL 在 IDE 主进程中检测到插件未安装时据此提示安装；
+    # 必须在载荷复制完成之后写入，避免被当作载荷的一部分。
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $vsixPath = Join-Path $OutputDir "antigravity-proxy.vsix"
+    $legacyVsix = Join-Path $OutputDir "antigravity-proxy.vsix"
+    if (Test-Path $legacyVsix) { Remove-Item -LiteralPath $legacyVsix -Force }  # 清理旧版本输出位置的残留
+    $vsixPath = Join-Path $IdeOutputDir "antigravity-proxy.vsix"
     if (Test-Path $vsixPath) { Remove-Item -LiteralPath $vsixPath -Force }
     $zip = [System.IO.Compression.ZipFile]::Open($vsixPath, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
@@ -878,7 +901,7 @@ Antigravity-Proxy 的 IDE 配套插件：
         $zip.Dispose()
     }
     $vsixSizeKb = [math]::Round((Get-Item $vsixPath).Length / 1KB, 1)
-    Write-Success "IDE 配置插件已打包: output\antigravity-proxy.vsix (v$extVersion, $vsixSizeKb KB)"
+    Write-Success "IDE 配置插件已打包: output\ide\antigravity-proxy.vsix (v$extVersion, $vsixSizeKb KB)"
 } else {
     Write-Warning "IDE 插件源码不存在，跳过 VSIX 打包: $extSrc"
 }
