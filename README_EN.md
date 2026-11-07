@@ -52,8 +52,10 @@ To pass parameters, add them at the end of the command, e.g. `... install-online
 | `-InstallDir <dir>` | Set the install directory manually (the folder containing the main executable) |
 | `-ProxyPort 7897` | Set the local proxy port (default: auto-detected) |
 | `-Yes` | Install without prompting |
+| `-ExtensionOnly` | Install only the IDE companion extension; patch and config are untouched (works while the IDE is running) |
 
-> If the script cannot be downloaded, turn on "System Proxy" in your proxy app and try again. Fully quit the app you are installing for before deploying.
+> If the script cannot be downloaded, turn on "System Proxy" in your proxy app and try again. Fully quit the app you are installing for before deploying (not needed for `-ExtensionOnly`).
+> The script works with Windows PowerShell 5.1 built into Windows 10 / 11, and with PowerShell 7.
 
 ### Option 2: Download a release package
 
@@ -90,11 +92,12 @@ Restart the app after deployment.
 - **Patch guard**: if an IDE update deletes the patch, it is restored on the next start (you will be asked to restart);
 - UI in Chinese / English / Russian, following the IDE language by default.
 
-**Install**: online install and `doctor` install it automatically. When you copy all files in `ide/` manually, the extension package is placed along with the patch, and the IDE asks on startup whether to install it with one click. You can also use Extensions view → `…` at the top right → "Install from VSIX...".
+**Install**: online install and `doctor` install it automatically. After a manual deployment, if the extension is not installed, the IDE shows a system notification on startup (once per patch version; ignoring it means no further reminders). If the extension package sits next to the patch, clicking the notification installs it locally; if only `version.dll` was copied, clicking asks for confirmation first and then opens a PowerShell window to install the extension online. You can also use Extensions view → `…` at the top right → "Install from VSIX...".
 
 | Status bar | Meaning |
 |:--|:--|
 | `Proxy 7890` | Patch is active, proxy port is reachable |
+| `Proxy · missing agy.exe` | `target_processes` lacks the IDE backend process, so chat is not proxied; click "Add missing" in the tooltip |
 | `Proxy · restart needed` | Config or patch was updated; takes effect after restarting the IDE |
 | `Proxy 7890 unreachable` | Proxy app not running or wrong port |
 | `Proxy patch missing` / `Proxy config error` | `version.dll` was deleted / `config.json` is missing or cannot be parsed |
@@ -146,7 +149,10 @@ The release package used by online install is in `%LOCALAPPDATA%\antigravity-pro
 Usually the server does not accept the proxy's egress IP (common with datacenter / hosting IPs). Switch to a regular residential ISP node and try again. If the patch log shows "已注入新建进程" (injected into new process) and "SOCKS5: 隧道建立成功" (tunnel established), the patch itself is working. See [docs/agent-ip-diagnosis.md](docs/agent-ip-diagnosis.md).
 
 **Traffic not proxied, or a blank home page?**
-Run `doctor.bat` first (read-only health check). It tells you whether the patch is missing, not loaded, or the proxy port is unreachable, and what to do next.
+Run `doctor.bat` first (read-only health check). It tells you whether the patch is missing, not loaded, the proxy port is unreachable, or `proxy.type` does not match the port's protocol, and what to do next.
+
+**Errors mention `198.18.x.x` refused / timed out?**
+`198.18.x.x` is an internal placeholder address (FakeIP) that the patch assigns to domain names, not the real target. Seeing it in an error usually means **connecting to the proxy failed**: check that the proxy app is running, the port is correct, and `proxy.type` matches the port's protocol (mixed ports accept both; an HTTP-only port needs `http`). `doctor.bat` detects the port's protocol automatically.
 
 **Where are the logs?**
 `<install dir>\logs\proxy-YYYYMMDD.log`; if that directory is not writable, `%TEMP%\antigravity-proxy-logs\`.
@@ -158,7 +164,7 @@ Run `doctor.bat` first (read-only health check). It tells you whether the patch 
 | `0xC0000142` / `0xC000007B` | Patch and program architecture do not match (x86 / x64), use the matching version; or runtime libraries are missing, install the Microsoft runtime bundle [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
 | `0xC0000135` / missing `VCRUNTIME140_1.dll` | Install the runtime bundle above |
 | `0xC0000906` | Blocked by security software; add the install directory to its whitelist |
-| `10061` / `10060` in the log | Proxy app not running or wrong port / connection timed out |
+| `10061` / `10060` in the log | Proxy app not running or wrong port / connection timed out; if the log says the port looks like an HTTP or SOCKS5 port, change `proxy.type` |
 
 **Does it work in WSL?**
 No: the patch only works for Windows processes. For alternatives in WSL, see [docs/wsl.md](docs/wsl.md).
