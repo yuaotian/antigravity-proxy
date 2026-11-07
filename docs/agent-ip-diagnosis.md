@@ -70,8 +70,8 @@ DLL 会在 `proxy-YYYYMMDD.log` 里直接输出告警，提示：
 
 如果下面这些关键行出现，说明 DLL 本身大概率已经工作正常：
 
-- `[成功] 已注入目标进程: language_server_windows_x64.exe`
-- `[成功] 已注入目标进程: node.exe`
+- `[成功] 已注入新建进程: api=CreateProcessW, ..., target_basename=language_server_windows_x64.exe`
+- `[成功] 已注入新建进程: api=CreateProcessW, ..., target_basename=node.exe`
 - `SOCKS5: 隧道建立成功, 目标=oauth2.googleapis.com:443`
 - `SOCKS5: 隧道建立成功, 目标=daily-cloudcode-pa.googleapis.com:443`
 

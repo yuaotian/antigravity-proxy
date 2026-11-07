@@ -998,7 +998,7 @@ function Install-IdeExtension {
     if (-not $vsix) {
         Add-Finding -Level "Info" -Code "ExtensionVsixNotFound" `
             -Message "未找到 antigravity-proxy.vsix，跳过 IDE 配套插件安装。" `
-            -Hint "插件提供状态栏、可视化配置与「更新后自动恢复补丁」，建议从发布包根目录安装。"
+            -Hint "插件提供状态栏、可视化配置与「更新后自动恢复补丁」，安装包位于 IDE 发布包的 ide\ 目录，也可单独下载 Release 资产 *-ide-extension-*.vsix。"
         return
     }
     $cli = Join-Path $BaseDir "bin\antigravity-ide.cmd"
