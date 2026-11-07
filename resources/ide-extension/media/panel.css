@@ -1,0 +1,1165 @@
+/*
+ * Antigravity Proxy 配置面板样式
+ * 原则：只使用 --vscode-* 主题变量与 codicons，视觉对齐 IDE 原生“设置”编辑器；
+ *       4/8px 间距体系；低饱和度（状态色全部取自当前主题）；完整的 hover/focus/disabled 状态。
+ */
+
+:root {
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s8: 32px;
+  --radius: 4px;
+  --toc-width: 168px;
+  --drawer-width: min(44vw, 520px);
+  --border: var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.2)));
+  --muted: var(--vscode-descriptionForeground);
+  --ok: var(--vscode-testing-iconPassed, var(--vscode-charts-green, #73c991));
+  --warn: var(--vscode-editorWarning-foreground, #cca700);
+  --err: var(--vscode-errorForeground, #f48771);
+  --row-hover: var(--vscode-settings-rowHoverBackground, rgba(128, 128, 128, 0.04));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 作者样式中的 display 会覆盖 hidden 属性的默认 display:none，这里统一兜底，保证 hidden 始终生效 */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  font-weight: var(--vscode-font-weight);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  line-height: 1.5;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.codicon {
+  vertical-align: text-bottom;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a:hover {
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
+}
+
+code,
+.mono {
+  font-family: var(--vscode-editor-font-family);
+  font-size: calc(var(--vscode-editor-font-size, 13px) - 1px);
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s5);
+  border-bottom: 1px solid var(--border);
+  background: var(--vscode-editor-background);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+  flex: 1;
+}
+
+.brand img {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.brand-text {
+  min-width: 0;
+}
+
+.brand h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.brand .path {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: none;
+}
+
+.dirty-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dirty-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder));
+}
+
+.error-count {
+  color: var(--err);
+  font-size: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px var(--s1);
+  font-family: inherit;
+}
+
+.error-count:hover {
+  text-decoration: underline;
+}
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 12px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn.primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.btn.secondary {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.btn.secondary:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled),
+.icon-btn[aria-expanded="true"],
+.icon-btn[aria-pressed="true"] {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+/* ---------- 状态带 ---------- */
+.statusband {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s5);
+  border-bottom: 1px solid var(--border);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  background: transparent;
+  max-width: 100%;
+}
+
+.chip .codicon {
+  font-size: 14px;
+}
+
+.chip.ok .codicon {
+  color: var(--ok);
+}
+
+.chip.warn .codicon {
+  color: var(--warn);
+}
+
+.chip.err .codicon {
+  color: var(--err);
+}
+
+.chip.muted {
+  color: var(--muted);
+}
+
+.chip .link-btn {
+  font-size: 12px;
+  margin-left: 2px;
+}
+
+.chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 主体：目录 + 内容 + 抽屉 ---------- */
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.toc {
+  width: var(--toc-width);
+  flex: none;
+  padding: var(--s4) 0;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.toc a {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px var(--s4) 6px calc(var(--s4) - 2px);
+  border-left: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.toc a:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-list-hoverBackground);
+}
+
+.toc a.active {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+  border-left-color: var(--vscode-focusBorder);
+}
+
+.toc .toc-count {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--s2) 0 var(--s8);
+  scroll-behavior: smooth;
+}
+
+.section {
+  padding: var(--s4) var(--s6) var(--s2);
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0 0 var(--s2);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.section-title .codicon {
+  color: var(--muted);
+}
+
+/* ---------- 设置行（对齐原生设置编辑器） ---------- */
+.setting {
+  position: relative;
+  padding: var(--s3) var(--s3) var(--s3) var(--s4);
+  border-radius: var(--radius);
+  max-width: 760px;
+}
+
+.setting:hover {
+  background: var(--row-hover);
+}
+
+.setting.modified::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: var(--s3);
+  bottom: var(--s3);
+  width: 2px;
+  border-radius: 1px;
+  background: var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder));
+}
+
+.setting-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+.setting-title {
+  font-weight: 600;
+}
+
+.setting-title .cat {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.setting-key {
+  color: var(--muted);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.setting-desc {
+  color: var(--muted);
+  margin: 2px 0 var(--s2);
+  max-width: 640px;
+}
+
+.setting-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.setting-msg {
+  margin-top: var(--s1);
+  font-size: 12px;
+}
+
+.setting-msg:empty {
+  display: none;
+}
+
+.msg-err {
+  color: var(--err);
+}
+
+.msg-warn {
+  color: var(--warn);
+}
+
+.msg-err .codicon,
+.msg-warn .codicon {
+  margin-right: 4px;
+}
+
+/* ---------- 表单控件 ---------- */
+.input,
+.select {
+  height: 26px;
+  padding: 2px 6px;
+  border: 1px solid var(--vscode-settings-textInputBorder, var(--vscode-input-border, transparent));
+  border-radius: 2px;
+  background: var(--vscode-settings-textInputBackground, var(--vscode-input-background));
+  color: var(--vscode-settings-textInputForeground, var(--vscode-input-foreground));
+  font: inherit;
+  min-width: 0;
+}
+
+.input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.input.w-s {
+  width: 110px;
+}
+
+.input.w-m {
+  width: 240px;
+}
+
+.input.w-l {
+  width: 360px;
+  max-width: 100%;
+}
+
+.select {
+  background: var(--vscode-settings-dropdownBackground, var(--vscode-dropdown-background));
+  color: var(--vscode-settings-dropdownForeground, var(--vscode-dropdown-foreground));
+  border-color: var(--vscode-settings-dropdownBorder, var(--vscode-dropdown-border, transparent));
+  min-width: 220px;
+  cursor: pointer;
+}
+
+[aria-invalid="true"] {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--err)) !important;
+}
+
+.field-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.secret-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 复选框：视觉对齐原生设置页，原生 input 保留可聚焦/可读屏 */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.check input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.check .box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--vscode-settings-checkboxBorder, var(--vscode-checkbox-border, var(--border)));
+  border-radius: 3px;
+  background: var(--vscode-settings-checkboxBackground, var(--vscode-checkbox-background));
+  color: var(--vscode-settings-checkboxForeground, var(--vscode-checkbox-foreground));
+  flex: none;
+}
+
+.check .box .codicon {
+  font-size: 14px;
+  visibility: hidden;
+}
+
+.check input:checked + .box .codicon {
+  visibility: visible;
+}
+
+.check input:focus-visible + .box {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+/* 分段选择（代理类型） */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--vscode-settings-textInputBorder, var(--vscode-input-border, var(--border)));
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.segmented button {
+  min-width: 84px;
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.segmented button:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* 选中态复用 IDE 原生“选项开关”令牌（与搜索框“区分大小写”开关一致）：
+   部分深色主题的 button.secondaryBackground 与背景几乎同色，实测选中态不可辨；
+   用内描边而非 border，避免切换时布局抖动 */
+.segmented button[aria-checked="true"] {
+  background: var(--vscode-inputOption-activeBackground, var(--vscode-button-secondaryBackground));
+  color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
+  box-shadow: inset 0 0 0 1px var(--vscode-inputOption-activeBorder, var(--vscode-focusBorder));
+  font-weight: 600;
+}
+
+/* 常用端口快捷填充 */
+.presets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.preset {
+  padding: 0 8px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.preset:hover {
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-focusBorder);
+}
+
+.preset[aria-pressed="true"] {
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-focusBorder);
+}
+
+/* 标签列表（进程名 / 端口 / 镜像 / 规则条件） */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 640px;
+  min-height: 30px;
+  padding: 3px;
+  border: 1px solid var(--vscode-settings-textInputBorder, var(--vscode-input-border, var(--border)));
+  border-radius: 2px;
+  background: var(--vscode-settings-textInputBackground, var(--vscode-input-background));
+  cursor: text;
+}
+
+.tags:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 2px 0 8px;
+  border-radius: 2px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 12px;
+}
+
+.tag.invalid {
+  background: transparent;
+  color: var(--err);
+  outline: 1px solid var(--vscode-inputValidation-errorBorder, var(--err));
+}
+
+.tag-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.tag button:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.25);
+}
+
+.tags input {
+  flex: 1;
+  min-width: 140px;
+  height: 22px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--vscode-input-foreground);
+  font: inherit;
+}
+
+/* ---------- 连通测试 ---------- */
+.probe-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.probe-result.ok .codicon {
+  color: var(--ok);
+}
+
+.probe-result.fail .codicon {
+  color: var(--err);
+}
+
+.probe-result.fail {
+  color: var(--vscode-foreground);
+}
+
+.probe-latency {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---------- 路由规则卡片 ---------- */
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  max-width: 760px;
+}
+
+.rule {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--vscode-editorWidget-background, transparent);
+}
+
+.rule.has-error {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--err));
+}
+
+.rule-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px var(--s2);
+}
+
+.rule-head .rule-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.rule-head .rule-summary {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.rule.disabled .rule-name,
+.rule.disabled .rule-summary {
+  opacity: 0.55;
+}
+
+.pill {
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 18px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.pill.proxy {
+  color: var(--vscode-textLink-foreground);
+  border-color: currentColor;
+}
+
+.rule-body {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--s2) var(--s3);
+  align-items: center;
+  padding: var(--s2) var(--s3) var(--s3);
+  border-top: 1px solid var(--border);
+}
+
+.rule-body label {
+  color: var(--muted);
+}
+
+.rule-errors {
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+
+/* ---------- 空 / 错误 / 骨架 ---------- */
+.state-card {
+  max-width: 520px;
+  margin: 12vh auto 0;
+  padding: var(--s8) var(--s6);
+  text-align: center;
+}
+
+.state-card .codicon.big {
+  font-size: 40px;
+  color: var(--muted);
+}
+
+.state-card.error .codicon.big {
+  color: var(--err);
+}
+
+.state-card h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: var(--s3) 0 var(--s2);
+}
+
+.state-card p {
+  color: var(--muted);
+  margin: 0 0 var(--s2);
+  word-break: break-all;
+}
+
+.state-card .state-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s5);
+}
+
+.empty-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  max-width: 760px;
+}
+
+.skeleton {
+  padding: var(--s6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+.sk {
+  height: 12px;
+  border-radius: 3px;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.15));
+  animation: sk-pulse 1.4s ease-in-out infinite;
+}
+
+.sk-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.sk.title {
+  width: 200px;
+  height: 18px;
+}
+
+.sk.line {
+  width: 60%;
+}
+
+.sk.short {
+  width: 35%;
+}
+
+.sk.input {
+  width: 260px;
+  height: 26px;
+}
+
+@keyframes sk-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---------- JSON / 差异抽屉 ---------- */
+.drawer {
+  width: var(--drawer-width);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  min-height: 0;
+}
+
+.drawer[hidden] {
+  display: none;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs {
+  display: inline-flex;
+  gap: var(--s1);
+  flex: 1;
+}
+
+.tab {
+  padding: 2px 10px;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--vscode-foreground);
+  border-bottom-color: var(--vscode-focusBorder);
+}
+
+.code {
+  flex: 1;
+  margin: 0;
+  padding: var(--s3) 0;
+  overflow: auto;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size, 12px);
+  line-height: 1.55;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.code .ln {
+  display: block;
+  padding: 0 var(--s3);
+}
+
+.code .ln.add {
+  background: var(--vscode-diffEditor-insertedLineBackground, var(--vscode-diffEditor-insertedTextBackground));
+}
+
+.code .ln.del {
+  background: var(--vscode-diffEditor-removedLineBackground, var(--vscode-diffEditor-removedTextBackground));
+}
+
+.code .ln.gap {
+  color: var(--muted);
+  text-align: center;
+}
+
+.code .mark {
+  display: inline-block;
+  width: 14px;
+  color: var(--muted);
+}
+
+.drawer-empty {
+  padding: var(--s6) var(--s4);
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---------- 菜单 ---------- */
+.menu-wrap {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 220px;
+  padding: var(--s1) 0;
+  border: 1px solid var(--vscode-menu-border, var(--border));
+  border-radius: var(--radius);
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+  z-index: 20;
+}
+
+.menu[hidden] {
+  display: none;
+}
+
+.menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: 5px var(--s3);
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu button:hover,
+.menu button:focus-visible {
+  outline: none;
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
+  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
+}
+
+.menu hr {
+  border: none;
+  border-top: 1px solid var(--vscode-menu-separatorBackground, var(--border));
+  margin: var(--s1) 0;
+}
+
+/* ---------- 底部横幅 / 提示 ---------- */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s5);
+  border-top: 1px solid var(--vscode-inputValidation-infoBorder, var(--border));
+  background: var(--vscode-inputValidation-infoBackground, var(--vscode-editorWidget-background));
+}
+
+.banner.error {
+  border-top-color: var(--vscode-inputValidation-errorBorder, var(--err));
+  background: var(--vscode-inputValidation-errorBackground, var(--vscode-editorWidget-background));
+}
+
+.banner[hidden] {
+  display: none;
+}
+
+.banner .banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.toasts {
+  position: fixed;
+  right: var(--s4);
+  bottom: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  z-index: 30;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: 420px;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--vscode-notifications-border, var(--border));
+  border-radius: var(--radius);
+  background: var(--vscode-notifications-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-notifications-foreground, var(--vscode-foreground));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+  pointer-events: auto;
+}
+
+.toast.error .codicon {
+  color: var(--err);
+}
+
+.toast.warn .codicon {
+  color: var(--warn);
+}
+
+.toast.info .codicon {
+  color: var(--vscode-notificationsInfoIcon-foreground, var(--vscode-textLink-foreground));
+}
+
+/* ---------- 高对比度 ---------- */
+body.vscode-high-contrast .setting:hover,
+body.vscode-high-contrast-light .setting:hover {
+  outline: 1px dashed var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+}
+
+body.vscode-high-contrast .chip,
+body.vscode-high-contrast .rule {
+  border-color: var(--vscode-contrastBorder);
+}
+
+/* ---------- 窄屏：目录改为顶部横向导航，抽屉改为覆盖层 ---------- */
+@media (max-width: 760px) {
+  .body {
+    flex-direction: column;
+  }
+
+  .toc {
+    width: auto;
+    display: flex;
+    overflow-x: auto;
+    padding: 0 var(--s3);
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .toc a {
+    border-left: none;
+    border-bottom: 2px solid transparent;
+    padding: var(--s2) var(--s3);
+    white-space: nowrap;
+  }
+
+  .toc a.active {
+    border-bottom-color: var(--vscode-focusBorder);
+  }
+
+  .section {
+    padding: var(--s3) var(--s3) var(--s1);
+  }
+
+  .drawer {
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: min(100vw, 520px);
+    z-index: 15;
+  }
+
+  .rule-body {
+    grid-template-columns: 1fr;
+  }
+
+  .brand .path {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+  }
+
+  .content {
+    scroll-behavior: auto;
+  }
+
+  .codicon-modifier-spin {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "name": "antigravity-proxy",
+  "displayName": "Antigravity Proxy",
+  "description": "Antigravity-Proxy 可视化配置面板、状态栏与补丁守护（IDE 更新后自动恢复 version.dll）",
+  "version": "0.0.0",
+  "publisher": "yuaotian",
+  "license": "SEE LICENSE IN LICENSE.txt",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yuaotian/antigravity-proxy"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "proxy",
+    "antigravity",
+    "socks5"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "antigravityProxy.openSettings",
+        "title": "打开代理设置",
+        "category": "Antigravity Proxy",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "antigravityProxy.testProxy",
+        "title": "测试代理连接",
+        "category": "Antigravity Proxy"
+      },
+      {
+        "command": "antigravityProxy.repairPatch",
+        "title": "检查并修复补丁",
+        "category": "Antigravity Proxy"
+      },
+      {
+        "command": "antigravityProxy.restartIde",
+        "title": "重启 IDE 使代理配置生效",
+        "category": "Antigravity Proxy"
+      },
+      {
+        "command": "antigravityProxy.openLogs",
+        "title": "打开代理日志目录",
+        "category": "Antigravity Proxy"
+      }
+    ],
+    "configuration": {
+      "title": "Antigravity Proxy",
+      "properties": {
+        "antigravityProxy.patchGuard.autoRestore": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "IDE 自动更新清除 `version.dll` / `config.json` 后，启动时自动从插件内置副本恢复（`config.json` 优先恢复为你上次的配置）。恢复后需重启 IDE 生效。"
+        },
+        "antigravityProxy.statusBar.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "在底部状态栏显示代理状态（点击打开代理设置）。"
+        },
+        "antigravityProxy.statusBar.probeIntervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "description": "状态栏代理端口连通性检测间隔（秒）；0 表示仅在启动与保存后检测。"
+        }
+      }
+    }
+  }
+}

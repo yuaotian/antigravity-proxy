@@ -290,6 +290,38 @@ so later `-Action Repair` runs need no arguments. See `docs/doctor.md` (Chinese)
 
 More field notes: `docs/antigravity-2.0-issue-85.md`.
 
+#### IDE Extension: Status Bar + Visual Settings + Patch Guard (Antigravity IDE)
+
+The IDE release archive ships `antigravity-proxy.vsix` in its root (Windows desktop Antigravity IDE only; not applicable to the `agy` CLI).
+
+**Install** (any one):
+
+- `doctor.ps1 -Action Setup` / `-Action Repair` installs it automatically when `Antigravity IDE.exe` is found (add `-SkipExtension` to opt out);
+- IDE Extensions view → `…` → **Install from VSIX…**;
+- Command line: `& "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension .\antigravity-proxy.vsix`
+
+**Status bar** (click to open the settings panel; hover for patch/config/reachability details and quick actions):
+
+| Status bar | Meaning |
+|:--|:--|
+| `🌐 代理 7890` | Patch is active in the current IDE process and the proxy port is reachable |
+| `⟳ 代理 · 待重启` | Config changed or patch just restored; takes effect after restarting the IDE |
+| `代理 7890 不可达` | Proxy app not running or port mismatch (the tooltip shows the exact reason) |
+| `代理补丁缺失` / `代理配置异常` | `version.dll` was deleted / `config.json` is missing or unparsable |
+| `代理已禁用` | `proxy.port = 0`, everything goes direct |
+
+**Settings panel**: visually edits `config.json` in the install directory (same validation rules as `config-web.html`), lets you **test the connection** without saving, shows a diff of your changes, and supports import/export. The old config is backed up before every save (last 10 kept in extension storage). The DLL reads its config only at process start, so click **立即重启 IDE** (Restart IDE) after saving — the IDE reopens with its original launch arguments.
+
+**Patch guard**: the extension lives in `~/.antigravity-ide/extensions`, which IDE auto-updates do not touch. When an update deletes `version.dll` / `config.json`, the extension puts them back on the next start — the DLL from its bundled copy (SHA256-verified, atomic replace) and the config from **your last saved config** first. Existing files are never overwritten. Restart when prompted and the proxy is back.
+
+| Setting | Default | Description |
+|:--|:--|:--|
+| `antigravityProxy.patchGuard.autoRestore` | `true` | Automatically restore a patch wiped by an update; when off, a one-click restore prompt is shown instead |
+| `antigravityProxy.statusBar.enabled` | `true` | Show the status bar item |
+| `antigravityProxy.statusBar.probeIntervalSeconds` | `60` | Proxy port reachability check interval (seconds, minimum 10); `0` = only at startup and after saving |
+
+> The bundled DLL is released together with the extension; install the new `antigravity-proxy.vsix` whenever you upgrade this project.
+
 #### Common Windows Path + Quick Jump
 
 In most cases, Antigravity is installed at:

@@ -405,6 +405,36 @@ Assert-Equal -Name "-InstallDir 指向合法目录时只体检该目录" -Expect
 Reset-State
 $InstallDir = ""
 
+Write-Host ""
+Write-Host "== 用例 13: IDE 配套插件安装（仅 Antigravity IDE 目录） ==" -ForegroundColor White
+
+# 桌面版 / CLI 目录：插件不适用，必须静默跳过（不产生任何 Extension* 条目）
+Reset-State
+$fx13 = New-Fixture
+Install-IdeExtension -BaseDir $fx13.Install
+Assert-True -Name "桌面版目录不尝试安装插件" -Condition (
+    @(Get-Findings | Where-Object { $_.Code -like "Extension*" }).Count -eq 0)
+
+# IDE 目录 + -SkipExtension：明确记录已跳过
+Reset-State
+$ide13 = Join-Path $script:FixtureRoot "install-ide-ext"
+New-Item -ItemType Directory -Path $ide13 -Force | Out-Null
+New-PeStub -Path (Join-Path $ide13 "Antigravity IDE.exe")
+$SkipExtension = $true
+Install-IdeExtension -BaseDir $ide13
+$SkipExtension = $false
+Assert-HasCode -Name "-SkipExtension 时记录跳过" -Code "ExtensionSkipped" -Level "Info"
+
+# IDE 目录但缺少 bin\antigravity-ide.cmd：有 VSIX 时告警并给出手动安装指引；无 VSIX（未构建）时提示未找到
+Reset-State
+Install-IdeExtension -BaseDir $ide13
+$extCodes = @(Get-Findings | Where-Object { $_.Code -like "Extension*" } | ForEach-Object { $_.Code })
+Assert-True -Name "缺少 IDE 命令行时不会误报安装成功" -Condition (
+    ($extCodes -contains "ExtensionCliMissing" -or $extCodes -contains "ExtensionVsixNotFound") -and
+    -not ($extCodes -contains "ExtensionInstalled"))
+
+Reset-State
+
 # ---------------------------------------------------------------------------
 if (-not $KeepFixtures) {
     Remove-Item -LiteralPath $script:FixtureRoot -Recurse -Force -ErrorAction SilentlyContinue

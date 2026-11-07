@@ -39,6 +39,10 @@
 .PARAMETER NoRun
     只加载函数定义不执行主流程，供测试脚本点源引用。
 
+.PARAMETER SkipExtension
+    Setup / Repair 时不安装 IDE 配套插件（antigravity-proxy.vsix）。
+    插件仅适用于 Antigravity IDE（VS Code 二开）；桌面版 Antigravity.exe 与 CLI 会自动跳过。
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\doctor.ps1
 
@@ -62,7 +66,8 @@ param(
     [switch]$Yes,
     [int]$WindowHours = 24,
     [switch]$Json,
-    [switch]$NoRun
+    [switch]$NoRun,
+    [switch]$SkipExtension
 )
 
 $ErrorActionPreference = "Stop"
@@ -959,6 +964,58 @@ function Report-RestartNeed {
     }
 }
 
+# ---------------------------------------------------------------------------
+# IDE 配套插件（状态栏 + 配置面板 + 补丁守护）
+# 插件安装在 ~/.antigravity-ide/extensions，不受 IDE 自动更新影响；更新冲掉 version.dll 后
+# 插件会在下次启动时自动补回，因此部署 DLL 时顺带安装插件即可长期免维护。
+# ---------------------------------------------------------------------------
+
+function Find-ExtensionVsix {
+    # 发布包内（与 doctor.ps1 同级）与源码仓内（scripts\ → output\）两种布局
+    $candidates = @(
+        (Join-Path $PSScriptRoot "antigravity-proxy.vsix"),
+        (Join-Path $PSScriptRoot "..\output\antigravity-proxy.vsix")
+    )
+    foreach ($c in $candidates) {
+        if (Test-FileExists $c) { return (Get-NormalizedPath $c) }
+    }
+    return ""
+}
+
+function Install-IdeExtension {
+    param([string]$BaseDir)
+
+    # 仅 Antigravity IDE（VS Code 二开）能加载插件；桌面版 Antigravity.exe 与 CLI 直接跳过
+    if (-not (Test-FileExists (Join-Path $BaseDir "Antigravity IDE.exe"))) { return }
+    if ($SkipExtension) {
+        Add-Finding -Level "Info" -Code "ExtensionSkipped" -Message "已按参数跳过 IDE 配套插件安装（-SkipExtension）。"
+        return
+    }
+    $vsix = Find-ExtensionVsix
+    if (-not $vsix) {
+        Add-Finding -Level "Info" -Code "ExtensionVsixNotFound" `
+            -Message "未找到 antigravity-proxy.vsix，跳过 IDE 配套插件安装。" `
+            -Hint "插件提供状态栏、可视化配置与「更新后自动恢复补丁」，建议从发布包根目录安装。"
+        return
+    }
+    $cli = Join-Path $BaseDir "bin\antigravity-ide.cmd"
+    # 注意：PowerShell 把中文弯引号视为字符串定界符，提示文案统一使用「」
+    $manualHint = "也可在 IDE 中打开扩展视图 → 右上角「…」 → 从 VSIX 安装，选择: $vsix"
+    if (-not (Test-FileExists $cli)) {
+        Add-Finding -Level "Warn" -Code "ExtensionCliMissing" -Message "IDE 命令行工具不存在: $cli" -Hint $manualHint
+        return
+    }
+    $output = & $cli --install-extension $vsix --force 2>&1 | ForEach-Object { [string]$_ }
+    if ($LASTEXITCODE -eq 0) {
+        Add-Finding -Level "Pass" -Code "ExtensionInstalled" `
+            -Message "已安装 IDE 配套插件（底部状态栏 + 配置面板 + 补丁守护），重启 IDE 后可见。"
+    } else {
+        $tail = (@($output) | Select-Object -Last 2) -join " "
+        Add-Finding -Level "Warn" -Code "ExtensionInstallFailed" `
+            -Message ("IDE 配套插件安装失败（退出码 {0}）：{1}" -f $LASTEXITCODE, $tail) -Hint $manualHint
+    }
+}
+
 function Invoke-Repair {
     param([string]$BaseDir, [string]$Variant, [string]$SrcDir)
 
@@ -1017,6 +1074,8 @@ function Invoke-Repair {
             -Message "保留安装目录内已有的 config.json，避免把你配好的端口重置回默认值。"
     }
 
+    # 部署 / 修复完成后顺带安装 IDE 配套插件（仅 Antigravity IDE 目录生效，失败只告警不阻断）
+    Install-IdeExtension -BaseDir $BaseDir
     Report-RestartNeed -AnyRunning (($state.HostRunning + $state.ChildRunning) -gt 0)
     return $true
 }
@@ -1210,6 +1269,8 @@ function Invoke-Setup {
         }
     }
 
+    # 部署 / 修复完成后顺带安装 IDE 配套插件（仅 Antigravity IDE 目录生效，失败只告警不阻断）
+    Install-IdeExtension -BaseDir $BaseDir
     Report-RestartNeed -AnyRunning (($state.HostRunning + $state.ChildRunning) -gt 0)
     if (-not (Test-PathInside $SrcDir $BaseDir)) {
         Add-Verdict "部署完成：启动 Antigravity 后再次运行本脚本体检，确认补丁已被进程加载。"

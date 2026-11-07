@@ -294,6 +294,38 @@ powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1 -Action Repair
 
 更多现场记录见 `docs/antigravity-2.0-issue-85.md`。
 
+#### IDE 插件：状态栏 + 可视化设置 + 补丁守护（Antigravity IDE）
+
+IDE 版发布包根目录附带 `antigravity-proxy.vsix`（仅 Windows 桌面端 Antigravity IDE；CLI `agy` 不适用）。
+
+**安装**（任选其一）：
+
+- `doctor.ps1 -Action Setup` / `-Action Repair` 检测到 `Antigravity IDE.exe` 时会自动安装（不想装可加 `-SkipExtension`）；
+- IDE 扩展视图右上角 `…` → **从 VSIX 安装…**；
+- 命令行：`& "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension .\antigravity-proxy.vsix`
+
+**底部状态栏**（点击即打开设置面板，悬浮可看补丁/配置/连通详情与快捷操作）：
+
+| 状态栏 | 含义 |
+|:--|:--|
+| `🌐 代理 7890` | 补丁已在当前 IDE 进程生效，代理端口可达 |
+| `⟳ 代理 · 待重启` | 配置已修改或补丁刚恢复，重启 IDE 后生效 |
+| `代理 7890 不可达` | 代理软件未启动或端口不一致（悬浮提示给出具体原因） |
+| `代理补丁缺失` / `代理配置异常` | `version.dll` 被删除 / `config.json` 缺失或无法解析 |
+| `代理已禁用` | `proxy.port = 0`，全部直连 |
+
+**设置面板**：可视化编辑安装目录下的 `config.json`（校验规则与 `config-web.html` 同源），支持不保存直接**测试连接**、查看改动 diff、导入/导出；每次保存前自动备份旧配置（插件存储中保留最近 10 份）。DLL 只在进程启动时读取配置，保存后点 **立即重启 IDE** 即可（按原启动参数重新打开）。
+
+**补丁守护**：插件安装在 `~/.antigravity-ide/extensions`，不会被 IDE 自动更新清除。IDE 更新删掉 `version.dll` / `config.json` 后，下次启动时插件自动补回——DLL 取自插件内置副本（SHA256 校验、原子替换），配置优先恢复为**你上次保存的配置**；已存在的文件绝不覆盖。恢复后提示重启即可恢复代理。
+
+| 设置项 | 默认 | 说明 |
+|:--|:--|:--|
+| `antigravityProxy.patchGuard.autoRestore` | `true` | 启动时自动恢复被更新清除的补丁；关闭后改为提示「一键恢复」 |
+| `antigravityProxy.statusBar.enabled` | `true` | 是否显示状态栏 |
+| `antigravityProxy.statusBar.probeIntervalSeconds` | `60` | 代理端口连通检测间隔（秒，最小 10）；`0` 仅在启动与保存后检测 |
+
+> 插件内置的 DLL 与插件同版本发布；升级本项目时请同时安装新版 `antigravity-proxy.vsix`。
+
 #### Windows 常见目录 + 快速跳转
 
 一般情况下 Antigravity 会装在：

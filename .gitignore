@@ -26,6 +26,8 @@
 ipch/
 obj/
 [Ll]ib
+# IDE 插件源码目录与 VS 产物目录同名，需显式保留，否则干净克隆/CI 打出的 VSIX 缺少全部模块
+!resources/ide-extension/lib/
 [Bb]in
 [Dd]ebug*/
 [Rr]elease*/

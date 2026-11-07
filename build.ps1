@@ -277,6 +277,25 @@ if ($RunTests) {
     } finally {
         Pop-Location
     }
+
+    # 共享配置核心与 IDE 插件的 JS 单元测试（node:test，零依赖）；未安装 Node 时跳过但给出提示
+    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    if ($nodeCmd) {
+        Write-Step "运行配置核心 / IDE 插件单元测试 (node --test)..."
+        $jsTests = @(
+            (Join-Path $ScriptDir "resources\shared\config-core.test.js")
+        ) + @(Get-ChildItem -Path (Join-Path $ScriptDir "resources\ide-extension\test") -Filter "*.test.js" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+        $nodeResult = & $nodeCmd.Source --test @jsTests 2>&1
+        $nodeFailed = ($LASTEXITCODE -ne 0)
+        $nodeResult | Select-Object -Last 8 | ForEach-Object { Write-Host $_ }
+        if ($nodeFailed) {
+            Write-Error "JS 单元测试失败"
+            exit 1
+        }
+        Write-Success "JS 单元测试通过"
+    } else {
+        Write-Warning "未检测到 Node.js，跳过配置核心 / IDE 插件单元测试"
+    }
 } elseif ($SkipTests) {
     Write-Step "已按参数跳过测试步骤 (-SkipTests)"
 } else {
@@ -687,9 +706,22 @@ Write-Success "使用说明已生成: $usagePath"
 
 Write-Step "复制配置工具..."
 $configWebSrc = Join-Path $PSScriptRoot "resources\config-web\index.html"
+$configCoreSrc = Join-Path $PSScriptRoot "resources\shared\config-core.js"
 if (Test-Path $configWebSrc) {
-    Copy-Item $configWebSrc -Destination (Join-Path $OutputDir "config-web.html") -Force
-    Write-Success "配置工具已复制到 output 目录"
+    # 配置页源码通过 <script src="../shared/config-core.js"> 引用共享核心；
+    # 发布产物需保持“单文件可离线打开”，因此在此把该标签替换为内联脚本。
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $configWebHtml = [IO.File]::ReadAllText($configWebSrc, $utf8NoBom)
+    $coreTag = '<script src="../shared/config-core.js"></script>'
+    if ($configWebHtml.Contains($coreTag)) {
+        if (-not (Test-Path $configCoreSrc)) { throw "缺少共享配置核心: $configCoreSrc" }
+        $coreJs = [IO.File]::ReadAllText($configCoreSrc, $utf8NoBom)
+        # 用 IndexOf 拼接而非 -replace，避免脚本内容中的 $ 被当作正则替换引用
+        $idx = $configWebHtml.IndexOf($coreTag)
+        $configWebHtml = $configWebHtml.Substring(0, $idx) + "<script>`r`n" + $coreJs + "`r`n</script>" + $configWebHtml.Substring($idx + $coreTag.Length)
+    }
+    [IO.File]::WriteAllText((Join-Path $OutputDir "config-web.html"), $configWebHtml, $utf8NoBom)
+    Write-Success "配置工具已生成到 output 目录（已内联共享配置核心）"
 } else {
     Write-Warning "配置工具源文件不存在: $configWebSrc"
 }
@@ -724,6 +756,131 @@ if (Test-Path $launcherScriptsSrc) {
         if (Test-Path $oldPath) { Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue }
     }
     Write-Success "跨平台智能配置向导套件 (setup.bat / setup.sh) 已同步到 output 目录"
+}
+
+# ============================================================
+# 步骤 10.6: 打包 IDE 配置插件 (VSIX)
+# ============================================================
+# 插件提供：状态栏 + 可视化配置面板 + 补丁守护（IDE 更新清除 version.dll 后自动恢复）。
+# 注意：Windows PowerShell 5.1 的 Compress-Archive 会写出反斜杠条目名，VS Code 解包（yauzl）会拒绝，
+#       因此这里直接使用 System.IO.Compression 并显式写入 "/" 分隔的条目名。
+
+Write-Step "打包 IDE 配置插件 (VSIX)..."
+$extSrc = Join-Path $PSScriptRoot "resources\ide-extension"
+if (Test-Path $extSrc) {
+    $extStage = Join-Path $BuildDir "ide-extension-stage"
+    if (Test-Path $extStage) { Remove-Item -LiteralPath $extStage -Recurse -Force }
+    $extRoot = Join-Path $extStage "extension"
+    New-Item -ItemType Directory -Path $extRoot -Force | Out-Null
+
+    # 1) 插件源码（排除单元测试；保留 media 中的图标 SVG 源文件无意义，打包时剔除）
+    Copy-Item -LiteralPath (Join-Path $extSrc "extension.js") -Destination $extRoot -Force
+    Copy-Item -LiteralPath (Join-Path $extSrc "lib") -Destination $extRoot -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $extSrc "media") -Destination $extRoot -Recurse -Force
+    Remove-Item -LiteralPath (Join-Path $extRoot "media\icon.svg") -Force -ErrorAction SilentlyContinue
+
+    # 2) 共享配置核心：Webview 与 Host 共用 media/config-core.js（唯一源文件 resources/shared/config-core.js）
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot "resources\shared\config-core.js") -Destination (Join-Path $extRoot "media\config-core.js") -Force
+
+    # 3) 补丁守护载荷：与本次构建同版本的 version.dll + 默认 config.json
+    $payloadDir = Join-Path $extRoot "payload"
+    New-Item -ItemType Directory -Path $payloadDir -Force | Out-Null
+    foreach ($payloadFile in @("version.dll", "config.json")) {
+        $pSrc = Join-Path $IdeOutputDir $payloadFile
+        if (-not (Test-Path $pSrc)) { throw "VSIX 载荷缺失: $pSrc" }
+        Copy-Item -LiteralPath $pSrc -Destination $payloadDir -Force
+    }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot "LICENSE.txt") -Destination (Join-Path $extRoot "LICENSE.txt") -Force
+
+    # 4) 版本号：插件要求 semver（2.5 → 2.5.0）
+    $extVersion = if ($Version -match '^\d+\.\d+$') { "$Version.0" } else { $Version }
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $pkgPath = Join-Path $extSrc "package.json"
+    $pkgText = [IO.File]::ReadAllText($pkgPath, $utf8NoBom)
+    $pkgText = [regex]::Replace($pkgText, '"version":\s*"[^"]*"', ('"version": "' + $extVersion + '"'), 1)
+    [IO.File]::WriteAllText((Join-Path $extRoot "package.json"), $pkgText, $utf8NoBom)
+    $pkg = $pkgText | ConvertFrom-Json
+
+    $readme = @"
+# Antigravity Proxy
+
+Antigravity-Proxy 的 IDE 配套插件：
+
+- **状态栏**：显示补丁 / 配置 / 代理连通状态，点击打开配置面板
+- **配置面板**：可视化编辑安装目录下的 ``config.json``，保存后一键重启 IDE 生效
+- **补丁守护**：IDE 自动更新清除 ``version.dll`` / ``config.json`` 后，启动时自动恢复
+
+项目主页：https://github.com/yuaotian/antigravity-proxy
+"@
+    [IO.File]::WriteAllText((Join-Path $extRoot "README.md"), $readme, $utf8NoBom)
+
+    # 5) VSIX 清单与内容类型
+    $manifest = @"
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
+  <Metadata>
+    <Identity Language="en-US" Id="$($pkg.name)" Version="$extVersion" Publisher="$($pkg.publisher)" />
+    <DisplayName>$($pkg.displayName)</DisplayName>
+    <Description xml:space="preserve">$([System.Security.SecurityElement]::Escape($pkg.description))</Description>
+    <Tags>proxy,antigravity,socks5</Tags>
+    <Categories>Other</Categories>
+    <GalleryFlags>Public</GalleryFlags>
+    <Properties>
+      <Property Id="Microsoft.VisualStudio.Code.Engine" Value="$($pkg.engines.vscode)" />
+      <Property Id="Microsoft.VisualStudio.Code.ExtensionKind" Value="ui" />
+      <Property Id="Microsoft.VisualStudio.Services.Links.Source" Value="https://github.com/yuaotian/antigravity-proxy" />
+    </Properties>
+    <License>extension/LICENSE.txt</License>
+    <Icon>extension/media/icon.png</Icon>
+  </Metadata>
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Code" />
+  </Installation>
+  <Dependencies />
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true" />
+    <Asset Type="Microsoft.VisualStudio.Services.Content.Details" Path="extension/README.md" Addressable="true" />
+    <Asset Type="Microsoft.VisualStudio.Services.Content.License" Path="extension/LICENSE.txt" Addressable="true" />
+    <Asset Type="Microsoft.VisualStudio.Services.Icons.Default" Path="extension/media/icon.png" Addressable="true" />
+  </Assets>
+</PackageManifest>
+"@
+    [IO.File]::WriteAllText((Join-Path $extStage "extension.vsixmanifest"), $manifest, $utf8NoBom)
+    $contentTypes = @"
+<?xml version="1.0" encoding="utf-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension=".json" ContentType="application/json" />
+  <Default Extension=".js" ContentType="application/javascript" />
+  <Default Extension=".css" ContentType="text/css" />
+  <Default Extension=".png" ContentType="image/png" />
+  <Default Extension=".ttf" ContentType="font/ttf" />
+  <Default Extension=".md" ContentType="text/markdown" />
+  <Default Extension=".txt" ContentType="text/plain" />
+  <Default Extension=".dll" ContentType="application/octet-stream" />
+  <Default Extension=".vsixmanifest" ContentType="text/xml" />
+</Types>
+"@
+    [IO.File]::WriteAllText((Join-Path $extStage "[Content_Types].xml"), $contentTypes, $utf8NoBom)
+
+    # 6) 写出 VSIX（zip，条目名统一为 "/" 分隔）
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $vsixPath = Join-Path $OutputDir "antigravity-proxy.vsix"
+    if (Test-Path $vsixPath) { Remove-Item -LiteralPath $vsixPath -Force }
+    $zip = [System.IO.Compression.ZipFile]::Open($vsixPath, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $stageFull = (Resolve-Path $extStage).Path.TrimEnd('\') + '\'
+        Get-ChildItem -LiteralPath $extStage -Recurse -File | ForEach-Object {
+            $entryName = $_.FullName.Substring($stageFull.Length).Replace('\', '/')
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal)
+        }
+    } finally {
+        $zip.Dispose()
+    }
+    $vsixSizeKb = [math]::Round((Get-Item $vsixPath).Length / 1KB, 1)
+    Write-Success "IDE 配置插件已打包: output\antigravity-proxy.vsix (v$extVersion, $vsixSizeKb KB)"
+} else {
+    Write-Warning "IDE 插件源码不存在，跳过 VSIX 打包: $extSrc"
 }
 
 # ============================================================

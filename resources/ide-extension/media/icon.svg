@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+  <!--
+    Antigravity Proxy 插件图标（原创）
+    寓意“代理中继”：连接从起点出发、穿过中央的代理闸环，再抵达目标。
+    低饱和度蓝 → 青渐变，深石板底色；16px（编辑器标签）与 128px（扩展视图）下均可辨识。
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2E3549"/>
+      <stop offset="1" stop-color="#1A1F2C"/>
+    </linearGradient>
+    <linearGradient id="route" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#6F8FE8"/>
+      <stop offset="1" stop-color="#6CC9BC"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#7FB4E6" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#7FB4E6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <rect x="4.5" y="4.5" width="119" height="119" rx="27.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.07"/>
+
+  <!-- 中央柔光：强调“闸环”是视觉焦点 -->
+  <circle cx="64" cy="64" r="34" fill="url(#glow)"/>
+
+  <!-- 路由曲线：自左下起，穿过中心，向右上方延伸 -->
+  <path d="M30 96 C 46 96, 52 78, 64 64 S 82 34, 98 34" fill="none" stroke="url(#route)" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- 起点 -->
+  <circle cx="30" cy="96" r="7.5" fill="#6F8FE8"/>
+
+  <!-- 终点箭头（右上） -->
+  <path d="M88 24 L104 34 L88 44" fill="none" stroke="#6CC9BC" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 代理闸环：底色挖空，形成“穿过”效果 -->
+  <circle cx="64" cy="64" r="15" fill="#232A3B"/>
+  <circle cx="64" cy="64" r="15" fill="none" stroke="#E6EAF3" stroke-width="5.5"/>
+  <circle cx="64" cy="64" r="4.5" fill="#E6EAF3"/>
+</svg>
