@@ -6,6 +6,8 @@
   "command.repairPatch": "Check and Repair Patch",
   "command.restartIde": "Restart IDE to Apply Proxy Settings",
   "command.openLogs": "Open Proxy Log Folder",
+  "view.containerTitle": "Antigravity Proxy",
+  "view.statusTitle": "Proxy Status & Actions",
   "config.language": "Display language of the extension. \"auto\" follows the IDE display language.",
   "config.language.auto": "Follow the IDE display language",
   "config.autoRestore": "After an IDE auto-update removes `version.dll` / `config.json`, restore them automatically at startup from the copy bundled with the extension (`config.json` is restored to your last saved settings first). Restart the IDE afterwards to apply.",

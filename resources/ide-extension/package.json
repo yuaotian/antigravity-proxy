@@ -35,6 +35,51 @@
     "virtualWorkspaces": true
   },
   "contributes": {
+    "icons": {
+      "agp-shield": {
+        "description": "Antigravity Proxy Shield Relay Icon",
+        "default": {
+          "fontPath": "./media/agp-icon.ttf",
+          "fontCharacter": "\\E001"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "antigravityProxy",
+          "title": "%view.containerTitle%",
+          "icon": "media/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "antigravityProxy": [
+        {
+          "id": "antigravityProxy.sidebar",
+          "name": "%view.statusTitle%"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "antigravityProxy.openSettings",
+          "when": "view == antigravityProxy.sidebar",
+          "group": "navigation@1"
+        },
+        {
+          "command": "antigravityProxy.scanProxy",
+          "when": "view == antigravityProxy.sidebar",
+          "group": "navigation@2"
+        },
+        {
+          "command": "antigravityProxy.testProxy",
+          "when": "view == antigravityProxy.sidebar",
+          "group": "navigation@3"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "antigravityProxy.openSettings",
@@ -45,12 +90,14 @@
       {
         "command": "antigravityProxy.scanProxy",
         "title": "%command.scanProxy%",
-        "category": "Antigravity Proxy"
+        "category": "Antigravity Proxy",
+        "icon": "$(search)"
       },
       {
         "command": "antigravityProxy.testProxy",
         "title": "%command.testProxy%",
-        "category": "Antigravity Proxy"
+        "category": "Antigravity Proxy",
+        "icon": "$(plug)"
       },
       {
         "command": "antigravityProxy.repairPatch",

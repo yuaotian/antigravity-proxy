@@ -6,6 +6,8 @@
   "command.repairPatch": "检查并修复补丁",
   "command.restartIde": "重启 IDE 使代理配置生效",
   "command.openLogs": "打开代理日志目录",
+  "view.containerTitle": "Antigravity 代理",
+  "view.statusTitle": "代理状态与快捷操作",
   "config.language": "插件界面语言；auto 表示跟随 IDE 显示语言。",
   "config.language.auto": "跟随 IDE 显示语言",
   "config.autoRestore": "IDE 自动更新清除 `version.dll` / `config.json` 后，启动时自动从插件内置副本恢复（`config.json` 优先恢复为你上次的配置）。恢复后需重启 IDE 生效。",

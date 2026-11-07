@@ -67,7 +67,10 @@
     "sb.disabled": ["代理已禁用", "Proxy disabled", "Прокси отключён"],
     "sb.disabledSummary": ["proxy.port=0，全部连接直连。", "proxy.port=0, all connections go direct.", "proxy.port=0, все соединения идут напрямую."],
     "sb.unreachable": ["代理 {port} 不可达", "Proxy {port} unreachable", "Прокси {port} недоступен"],
+    "sb.probing": ["正在探测 {port}…", "Checking {port}…", "Проверка {port}…"],
+    "sb.probingSummary": ["正在检测代理端口连通性…", "Checking proxy port reachability…", "Проверка доступности порта прокси…"],
     "sb.ok": ["代理 {port}", "Proxy {port}", "Прокси {port}"],
+    "sb.okLatency": ["代理 {port} · {ms}ms", "Proxy {port} · {ms}ms", "Прокси {port} · {ms}мс"],
     "sb.okSummary": ["代理补丁已生效。", "The proxy patch is active.", "Патч прокси активен."],
     "sb.a11y": ["Antigravity Proxy：{text}。{summary} 点击打开代理设置", "Antigravity Proxy: {text}. {summary} Click to open proxy settings", "Antigravity Proxy: {text}. {summary} Нажмите, чтобы открыть настройки прокси"],
     "sb.rowPatch": ["补丁", "Patch", "Патч"],
@@ -83,14 +86,27 @@
     "sb.configStateInvalid": ["无法解析", "invalid", "повреждён"],
     "sb.configStateError": ["读取失败", "read error", "ошибка чтения"],
     "sb.reachOk": ["可达", "reachable", "доступен"],
+    "sb.reachOkLatency": ["可达 · {ms} ms", "reachable · {ms} ms", "доступен · {ms} мс"],
     "sb.linkSettings": ["打开设置", "Open settings", "Настройки"],
+    "sb.linkScan": ["扫描代理", "Scan proxies", "Найти прокси"],
     "sb.linkTest": ["测试连接", "Test connection", "Проверить"],
     "sb.linkRepair": ["修复补丁", "Repair patch", "Восстановить патч"],
     "sb.linkRestart": ["重启 IDE", "Restart IDE", "Перезапустить IDE"],
+    "sb.linkLogs": ["日志", "Logs", "Журналы"],
     // 配置缺少 IDE 后端进程（agy.exe）时的轻提示：只在状态栏显示，不弹窗
     "sb.targetsMissing": ["代理 · 缺少 {names}", "Proxy · missing {names}", "Прокси · нет {names}"],
     "sb.targetsMissingSummary": ["target_processes 缺少 {names}，IDE 后端不会走代理。可在悬浮提示中一键补齐。", "target_processes is missing {names}, so the IDE backend bypasses the proxy. Use \"Add missing\" in this tooltip.", "В target_processes нет {names}, поэтому бэкенд IDE идёт мимо прокси. Нажмите «Добавить» в этой подсказке."],
     "sb.linkFixTargets": ["一键补齐", "Add missing", "Добавить"],
+
+    // ---------------- 左侧活动栏视图 ----------------
+    "side.groupStatus": ["当前状态", "Current Status", "Текущее состояние"],
+    "side.groupActions": ["快捷操作", "Quick Actions", "Быстрые действия"],
+    "side.openSettings": ["打开代理设置面板", "Open Proxy Settings", "Открыть настройки прокси"],
+    "side.scanProxy": ["扫描本机可用代理", "Scan for Local Proxies", "Найти локальный прокси"],
+    "side.testProxy": ["测试代理连接", "Test Proxy Connection", "Проверить подключение"],
+    "side.repairPatch": ["检查并修复补丁", "Check and Repair Patch", "Проверить и восстановить патч"],
+    "side.restartIde": ["立即重启 IDE", "Restart IDE Now", "Перезапустить IDE"],
+    "side.openLogs": ["打开代理日志目录", "Open Proxy Log Folder", "Открыть папку журналов"],
 
     // ---------------- 面板宿主 ----------------
     "host.panelTitle": ["代理设置", "Proxy Settings", "Настройки прокси"],

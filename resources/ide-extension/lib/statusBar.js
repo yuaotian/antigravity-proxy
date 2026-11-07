@@ -2,9 +2,10 @@
 "use strict";
 
 /**
- * 底部状态栏（单一职责：把状态模型渲染为状态栏文本/配色/悬浮提示；不做任何 IO）。
+ * 底部状态栏（单一职责：把状态模型渲染为状态栏文本/配色/动效/悬浮提示；不做任何 IO）。
  * 点击 → 打开配置面板。按“影响程度”只展示最需要处理的一项，避免信息过载。
- * 文案经翻译函数输出（简体中文 / English / Русский），codicon 图标标记与文案分离。
+ * 正常连通态使用自定义 G8 护盾中继图标 $(agp-shield) 并展示实时延迟；
+ * 探测中与待重启态启用 ~spin 动态旋转效果；悬浮卡片内嵌彩色 G8 徽章与快捷操作栏。
  */
 
 /**
@@ -14,16 +15,22 @@
  * @property {{ host: string, port: number, type: string } | null} proxy
  * @property {import("./proxyProbe").ProbeResult | null} reach
  * @property {boolean} pendingRestart
+ * @property {boolean} [probing] 是否正在执行连通性探测（用于触发状态栏旋转动效）
  * @property {string[]} [missingTargets] 配置缺少的 IDE 后端目标进程（如 agy.exe），见 configHealth.js
  */
 
 /** @typedef {(key: string, params?: Record<string, any>) => string} Translate */
 
 class ProxyStatusBar {
-  /** @param {typeof import("vscode")} vscode @param {Translate} t */
-  constructor(vscode, t) {
+  /**
+   * @param {typeof import("vscode")} vscode
+   * @param {Translate} t
+   * @param {import("vscode").Uri} [iconUri] 插件彩色图标 URI（用于悬浮卡片头部徽章展示）
+   */
+  constructor(vscode, t, iconUri) {
     this.vscode = vscode;
     this.t = t;
+    this.iconUri = iconUri;
     this.item = vscode.window.createStatusBarItem("antigravityProxy.status", vscode.StatusBarAlignment.Right, 100);
     this.item.name = "Antigravity Proxy";
     this.item.command = "antigravityProxy.openSettings";
@@ -35,7 +42,7 @@ class ProxyStatusBar {
     const t = this.t;
     const port = m.proxy ? m.proxy.port : 0;
     const missingTargets = m.missingTargets || [];
-    /** @type {{ icon: string, text: string, bg?: string, summary: string }} */
+    /** @type {{ icon: string, text: string, bg?: string, fg?: string, summary: string }} */
     let view;
     if (!m.patch.dllExists) {
       view = { icon: "error", text: t("sb.patchMissing"), bg: "statusBarItem.errorBackground", summary: t("sb.patchMissingSummary") };
@@ -46,17 +53,25 @@ class ProxyStatusBar {
       const names = missingTargets.join(", ");
       view = { icon: "warning", text: t("sb.targetsMissing", { names }), bg: "statusBarItem.warningBackground", summary: t("sb.targetsMissingSummary", { names }) };
     } else if (m.pendingRestart || m.patch.needsRestart) {
-      view = { icon: "sync", text: t("sb.pending"), bg: "statusBarItem.warningBackground", summary: t("sb.pendingSummary") };
+      // 待重启生效：启用 sync~spin 旋转动效温和提醒用户重启 IDE
+      view = { icon: "sync~spin", text: t("sb.pending"), bg: "statusBarItem.warningBackground", summary: t("sb.pendingSummary") };
     } else if (port === 0) {
       view = { icon: "circle-slash", text: t("sb.disabled"), summary: t("sb.disabledSummary") };
+    } else if (m.probing) {
+      // 正在进行端口或隧道探测：显示动态旋转加载效果
+      view = { icon: "sync~spin", text: t("sb.probing", { port }), summary: t("sb.probingSummary") };
     } else if (m.reach && !m.reach.ok) {
       view = { icon: "debug-disconnect", text: t("sb.unreachable", { port }), bg: "statusBarItem.warningBackground", summary: m.reach.message };
     } else {
-      view = { icon: "globe", text: t("sb.ok", { port }), summary: t("sb.okSummary") };
+      // 正常连通态：替换为专属 G8 护盾中继图标 $(agp-shield)，并在有延迟数据时直接显示毫秒数
+      const hasMs = m.reach && m.reach.ok && Number(m.reach.latencyMs) > 0;
+      const text = hasMs ? t("sb.okLatency", { port, ms: m.reach.latencyMs }) : t("sb.ok", { port });
+      view = { icon: "agp-shield", text, summary: t("sb.okSummary") };
     }
 
     this.item.text = `$(${view.icon}) ${view.text}`;
     this.item.backgroundColor = view.bg ? new ThemeColor(view.bg) : undefined;
+    this.item.color = view.fg ? new ThemeColor(view.fg) : undefined;
     // 明确的无障碍名称与角色：读屏可朗读完整状态，也便于 UI 自动化定位
     this.item.accessibilityInformation = {
       label: t("sb.a11y", { text: view.text, summary: view.summary }),
@@ -67,20 +82,33 @@ class ProxyStatusBar {
     md.isTrusted = {
       enabledCommands: [
         "antigravityProxy.openSettings",
+        "antigravityProxy.scanProxy",
         "antigravityProxy.testProxy",
         "antigravityProxy.repairPatch",
         "antigravityProxy.restartIde",
         "antigravityProxy.fixTargets",
+        "antigravityProxy.openLogs",
       ],
     };
-    md.appendMarkdown(`**Antigravity Proxy** — ${escapeMd(view.summary)}\n\n`);
+    // 顶部抬头内嵌 G8 彩色护盾小图标徽章
+    const badge = this.iconUri ? `![](${this.iconUri.toString()}|width=16,height=16) ` : "$(agp-shield) ";
+    md.appendMarkdown(`${badge}**Antigravity Proxy** — ${escapeMd(view.summary)}\n\n`);
     md.appendMarkdown("| | |\n|:--|:--|\n");
     md.appendMarkdown(`| ${t("sb.rowPatch")} | ${patchText(m.patch, t)} |\n`);
     md.appendMarkdown(`| ${t("sb.rowConfig")} | ${configText(m.configStatus, t)} |\n`);
     if (m.proxy) md.appendMarkdown(`| ${t("sb.rowProxy")} | \`${m.proxy.type}://${m.proxy.host}:${m.proxy.port}\` |\n`);
-    if (m.reach) md.appendMarkdown(`| ${t("sb.rowReach")} | ${m.reach.ok ? `$(pass-filled) ${t("sb.reachOk")}` : "$(warning) " + escapeMd(m.reach.message)} |\n`);
+    if (m.probing) {
+      md.appendMarkdown(`| ${t("sb.rowReach")} | $(sync~spin) ${escapeMd(t("sb.probingSummary"))} |\n`);
+    } else if (m.reach) {
+      const okStr = Number(m.reach.latencyMs) > 0
+        ? t("sb.reachOkLatency", { ms: m.reach.latencyMs })
+        : t("sb.reachOk");
+      md.appendMarkdown(`| ${t("sb.rowReach")} | ${m.reach.ok ? `$(pass-filled) ${okStr}` : "$(warning) " + escapeMd(m.reach.message)} |\n`);
+    }
     md.appendMarkdown(`\n[$(settings-gear) ${t("sb.linkSettings")}](command:antigravityProxy.openSettings)`);
+    md.appendMarkdown(` · [$(search) ${t("sb.linkScan")}](command:antigravityProxy.scanProxy)`);
     md.appendMarkdown(` · [$(plug) ${t("sb.linkTest")}](command:antigravityProxy.testProxy)`);
+    md.appendMarkdown(` · [$(folder-opened) ${t("sb.linkLogs")}](command:antigravityProxy.openLogs)`);
     if (!m.patch.dllExists) md.appendMarkdown(` · [$(cloud-download) ${t("sb.linkRepair")}](command:antigravityProxy.repairPatch)`);
     if (missingTargets.length > 0) md.appendMarkdown(` · [$(wrench) ${t("sb.linkFixTargets")}](command:antigravityProxy.fixTargets)`);
     if (m.pendingRestart || m.patch.needsRestart) md.appendMarkdown(` · [$(debug-restart) ${t("sb.linkRestart")}](command:antigravityProxy.restartIde)`);

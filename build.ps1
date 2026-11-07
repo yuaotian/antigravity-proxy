@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 #  Antigravity-Proxy 编译脚本
 #  PowerShell Build Script for Windows
 # ============================================================
@@ -872,6 +872,7 @@ Antigravity-Proxy 的 IDE 配套插件：
   <Default Extension=".js" ContentType="application/javascript" />
   <Default Extension=".css" ContentType="text/css" />
   <Default Extension=".png" ContentType="image/png" />
+  <Default Extension=".svg" ContentType="image/svg+xml" />
   <Default Extension=".ttf" ContentType="font/ttf" />
   <Default Extension=".md" ContentType="text/markdown" />
   <Default Extension=".txt" ContentType="text/plain" />

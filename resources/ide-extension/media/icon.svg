@@ -1,41 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
   <!--
-    Antigravity Proxy 插件图标（原创）
-    寓意“代理中继”：连接从起点出发、穿过中央的代理闸环，再抵达目标。
-    低饱和度蓝 → 青渐变，深石板底色；16px（编辑器标签）与 128px（扩展视图）下均可辨识。
+    Antigravity Proxy 插件图标（方案 G8：双层内衬护盾 × 弧形流转箭头，深浅色主题双兼容版）
+    设计意图：
+    1. 轻颜色底板：采用清透天蓝渐变（#E0F2FE → #DBEAFE），外层配 #38BDF8 清亮天蓝描边，
+       内层嵌 #FFFFFF 高光细环，确保在浅色（白/浅灰）与深色 IDE 主题下均边界清晰、通透现代。
+    2. 双层线条护盾：外层蓝青渐变圆角护盾 + 内层 #93C5FD 细线内衬，寓意补丁防清除守护（PatchGuard）与安全代理。
+    3. 弧形流转双向箭头：护盾中心上下两条微弧度双向流转箭头，直观表达网络代理（Proxy）流量中继与转发。
   -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2E3549"/>
-      <stop offset="1" stop-color="#1A1F2C"/>
+      <stop offset="0" stop-color="#E0F2FE"/>
+      <stop offset="1" stop-color="#DBEAFE"/>
     </linearGradient>
-    <linearGradient id="route" x1="0" y1="1" x2="1" y2="0">
-      <stop offset="0" stop-color="#6F8FE8"/>
-      <stop offset="1" stop-color="#6CC9BC"/>
+    <linearGradient id="shield" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#2563EB"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#7FB4E6" stop-opacity="0.35"/>
-      <stop offset="1" stop-color="#7FB4E6" stop-opacity="0"/>
-    </radialGradient>
   </defs>
 
-  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
-  <rect x="4.5" y="4.5" width="119" height="119" rx="27.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.07"/>
+  <!-- 圆角矩形底板：外层天蓝描边（兼顾浅色白底对比度）+ 内层白色高光环（兼顾深色主题精致感） -->
+  <rect x="5" y="5" width="118" height="118" rx="28" fill="url(#bg)" stroke="#38BDF8" stroke-width="3"/>
+  <rect x="8" y="8" width="112" height="112" rx="25.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="1.5"/>
 
-  <!-- 中央柔光：强调“闸环”是视觉焦点 -->
-  <circle cx="64" cy="64" r="34" fill="url(#glow)"/>
+  <!-- 外层现代线条护盾（纯白高透衬底 + 晴空蓝至深海蓝渐变描边） -->
+  <path d="M64 19 L99 33 V62 C 99 85, 82 99, 64 109 C 46 99, 29 85, 29 62 V33 Z" fill="#FFFFFF" fill-opacity="0.92" stroke="url(#shield)" stroke-width="4.5" stroke-linejoin="round"/>
 
-  <!-- 路由曲线：自左下起，穿过中心，向右上方延伸 -->
-  <path d="M30 96 C 46 96, 52 78, 64 64 S 82 34, 98 34" fill="none" stroke="url(#route)" stroke-width="9" stroke-linecap="round"/>
+  <!-- 护盾内层细线内衬轮廓 -->
+  <path d="M64 26 L92 37.5 V61 C 92 79.5, 78.5 91.5, 64 100 C 49.5 91.5, 36 79.5, 36 61 V37.5 Z" fill="none" stroke="#93C5FD" stroke-width="2.2" stroke-linejoin="round"/>
 
-  <!-- 起点 -->
-  <circle cx="30" cy="96" r="7.5" fill="#6F8FE8"/>
+  <!-- 上行弧形代理请求流（左 → 右，晴空天蓝） -->
+  <path d="M44 55 Q 64 46 82 55" fill="none" stroke="#0284C7" stroke-width="5" stroke-linecap="round"/>
+  <path d="M74 46 L84 55 L73 61" fill="none" stroke="#0284C7" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
 
-  <!-- 终点箭头（右上） -->
-  <path d="M88 24 L104 34 L88 44" fill="none" stroke="#6CC9BC" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-
-  <!-- 代理闸环：底色挖空，形成“穿过”效果 -->
-  <circle cx="64" cy="64" r="15" fill="#232A3B"/>
-  <circle cx="64" cy="64" r="15" fill="none" stroke="#E6EAF3" stroke-width="5.5"/>
-  <circle cx="64" cy="64" r="4.5" fill="#E6EAF3"/>
+  <!-- 下行弧形代理响应流（右 → 左，皇家深蓝） -->
+  <path d="M84 71 Q 64 80 46 71" fill="none" stroke="#2563EB" stroke-width="5" stroke-linecap="round"/>
+  <path d="M54 80 L44 71 L55 65" fill="none" stroke="#2563EB" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

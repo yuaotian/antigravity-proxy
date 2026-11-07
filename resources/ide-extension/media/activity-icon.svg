@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 128 128" fill="none">
+  <!--
+    Antigravity Proxy 左侧活动栏（Activity Bar）单色自适应图标（对应方案 G8：双层内衬护盾 × 弧形流转箭头）
+    使用 currentColor 描边，由 VS Code / Antigravity IDE 根据当前深色或浅色主题自动着色。
+  -->
+  <!-- 外层护盾主轮廓 -->
+  <path d="M64 12 L108 29 V63 C 108 91, 87 108, 64 118 C 41 108, 20 91, 20 63 V29 Z" stroke="currentColor" stroke-width="8.5" stroke-linejoin="round"/>
+  <!-- 内层细线护盾内衬 -->
+  <path d="M64 24 L96 36.5 V62 C 96 84, 80 97, 64 105.5 C 48 97, 32 84, 32 62 V36.5 Z" stroke="currentColor" stroke-width="4" stroke-opacity="0.45" stroke-linejoin="round"/>
+  <!-- 上行弧形代理箭头 -->
+  <path d="M42 54 Q 64 44 84 54" stroke="currentColor" stroke-width="8.5" stroke-linecap="round"/>
+  <path d="M73 43 L86 54 L72 62" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 下行弧形代理箭头 -->
+  <path d="M86 74 Q 64 84 44 74" stroke="currentColor" stroke-width="8.5" stroke-linecap="round"/>
+  <path d="M55 85 L42 74 L56 66" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+

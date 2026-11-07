@@ -20,6 +20,7 @@ const { resolveInstallInfo } = require("./lib/installInfo");
 const { ConfigStore } = require("./lib/configStore");
 const { PatchGuard } = require("./lib/patchGuard");
 const { ProxyStatusBar } = require("./lib/statusBar");
+const { ProxySidebarProvider } = require("./lib/sidebarView");
 const { ConfigPanel } = require("./lib/configPanel");
 const { probeProxy } = require("./lib/proxyProbe");
 const { scanLocalProxies } = require("./lib/proxyScan");
@@ -53,8 +54,14 @@ function activate(context) {
 
   const store = new ConfigStore(info.configPath, context.globalStorageUri.fsPath, tr);
   const guard = new PatchGuard(info, store, context.extensionPath, tr);
-  const statusBar = new ProxyStatusBar(vscode, tr);
-  context.subscriptions.push(statusBar);
+  const iconUri = vscode.Uri.joinPath(context.extensionUri, "media", "icon.png");
+  const statusBar = new ProxyStatusBar(vscode, tr, iconUri);
+  const sidebar = new ProxySidebarProvider(vscode, tr);
+  context.subscriptions.push(
+    statusBar,
+    sidebar,
+    vscode.window.registerTreeDataProvider("antigravityProxy.sidebar", sidebar),
+  );
 
   let sessionPendingRestart = false;
   /** @type {import("./lib/proxyProbe").ProbeResult | null} */
@@ -69,19 +76,12 @@ function activate(context) {
     }
   };
 
-  /** 刷新状态栏；probe=true 时顺带做一次轻量 TCP 连通检测 */
+  /** 刷新底部状态栏与左侧活动栏视图；probe=true 时顺带做一次轻量 TCP 连通检测并展示探测动效 */
   const refresh = async (probe = false) => {
     const enabled = vscode.workspace.getConfiguration(CONFIG_SECTION).get("statusBar.enabled", true);
-    if (!enabled) {
-      statusBar.hide();
-      return;
-    }
     const read = store.read();
     const proxy = read.status === "ok" ? Core.normalizeForm(read.raw).proxy : null;
-    if (probe && proxy && proxy.port > 0) {
-      lastReach = await probeProxy(proxy, { tcpOnly: true, timeoutMs: 3000, t: tr });
-    }
-    statusBar.render({
+    const baseModel = () => ({
       patch: guard.check(),
       configStatus: read.status,
       proxy,
@@ -89,6 +89,17 @@ function activate(context) {
       pendingRestart: isPendingRestart(),
       missingTargets: read.status === "ok" ? findMissingTargets(read.raw) : [],
     });
+    if (probe && proxy && proxy.port > 0) {
+      const probingModel = { ...baseModel(), probing: true };
+      sidebar.render(probingModel);
+      if (enabled) statusBar.render(probingModel);
+      else statusBar.hide();
+      lastReach = await probeProxy(proxy, { tcpOnly: true, timeoutMs: 3000, t: tr });
+    }
+    const finalModel = baseModel();
+    sidebar.render(finalModel);
+    if (enabled) statusBar.render(finalModel);
+    else statusBar.hide();
   };
 
   /** 状态栏悬浮提示「一键补齐」：把缺少的后端进程写入 target_processes（写前自动备份），提示重启生效 */

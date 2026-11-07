@@ -6,6 +6,8 @@
   "command.repairPatch": "Проверить и восстановить патч",
   "command.restartIde": "Перезапустить IDE для применения настроек прокси",
   "command.openLogs": "Открыть папку журналов прокси",
+  "view.containerTitle": "Прокси Antigravity",
+  "view.statusTitle": "Состояние и действия",
   "config.language": "Язык интерфейса расширения; auto — как язык интерфейса IDE.",
   "config.language.auto": "Как язык интерфейса IDE",
   "config.autoRestore": "Если автообновление IDE удалило `version.dll` / `config.json`, при запуске они автоматически восстанавливаются из копии в расширении (`config.json` — в первую очередь из ваших последних сохранённых настроек). Затем перезапустите IDE.",
