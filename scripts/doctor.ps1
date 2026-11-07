@@ -1011,7 +1011,7 @@ function Install-IdeExtension {
     $output = & $cli --install-extension $vsix --force 2>&1 | ForEach-Object { [string]$_ }
     if ($LASTEXITCODE -eq 0) {
         Add-Finding -Level "Pass" -Code "ExtensionInstalled" `
-            -Message "已安装 IDE 配套插件（底部状态栏 + 配置面板 + 补丁守护），重启 IDE 后可见。"
+            -Message "已安装 IDE 配套插件（底部状态栏 + 配置面板 + 补丁守护）；运行中的 IDE 会自动加载，未运行则下次启动生效。"
     } else {
         $tail = (@($output) | Select-Object -Last 2) -join " "
         Add-Finding -Level "Warn" -Code "ExtensionInstallFailed" `
