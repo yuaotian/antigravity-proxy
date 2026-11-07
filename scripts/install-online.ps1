@@ -34,6 +34,13 @@
 
 .PARAMETER Yes
     不询问，直接安装全部检测到的产品。
+
+.PARAMETER ExtensionOnly
+    只安装 Antigravity IDE 配套插件：下载 Release 中的插件 VSIX（校验后）并用 IDE 命令行安装，
+    不修改 version.dll 与 config.json，IDE 运行中也可执行（只装了 DLL 时由 DLL 的通知引导调用）。
+
+.PARAMETER ExtensionsDir / UserDataDir
+    透传给 IDE 命令行的 --extensions-dir / --user-data-dir（便携版或多配置用户）。
 #>
 [CmdletBinding()]
 param(
@@ -42,7 +49,10 @@ param(
     [string]$Product = "",
     [string]$InstallDir = "",
     [int]$ProxyPort = 0,
-    [switch]$Yes
+    [switch]$Yes,
+    [switch]$ExtensionOnly,
+    [string]$ExtensionsDir = "",
+    [string]$UserDataDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -128,6 +138,13 @@ $script:Msg = @{
                         "Antigravity IDE: the companion extension is installed; click the status bar to configure the proxy. It restores the patch after IDE updates.",
                         "Antigravity IDE: установлено сопутствующее расширение; нажмите на строку состояния для настройки прокси. Оно восстанавливает патч после обновлений IDE.")
     NextRepair      = @("应用更新后补丁丢失时运行：", "If an app update removes the patch, run:", "Если обновление удалило патч, выполните:")
+    ExtTitle        = @("Antigravity Proxy 配套插件安装（只装插件，不修改 DLL 与配置）", "Antigravity Proxy companion extension install (extension only; DLL and config untouched)", "Установка расширения Antigravity Proxy (только расширение; DLL и конфигурация не меняются)")
+    ExtIdeNotFound  = @("未找到 Antigravity IDE（Antigravity IDE.exe）。可用 -InstallDir 指定安装目录。", "Antigravity IDE (Antigravity IDE.exe) not found. Use -InstallDir to specify it.", "Antigravity IDE (Antigravity IDE.exe) не найдена. Укажите каталог через -InstallDir.")
+    ExtCliMissing   = @("IDE 命令行工具不存在：{0}", "IDE command-line tool not found: {0}", "Не найден инструмент командной строки IDE: {0}")
+    ExtAssetMissing = @("{0} 未提供插件安装包（需要 v2.5 及以上），请用 -Version 指定更新的版本。", "{0} has no extension package (v2.5+ required); pass a newer -Version.", "В {0} нет пакета расширения (нужна v2.5+); укажите более новую -Version.")
+    ExtInstalling   = @("安装插件到 {0} ...", "Installing the extension into {0} ...", "Установка расширения в {0} ...")
+    ExtInstalled    = @("插件安装完成：运行中的 IDE 会自动加载，无需重启；点击底部状态栏即可设置代理。", "Extension installed. A running IDE loads it automatically, no restart needed; click the status bar to configure the proxy.", "Расширение установлено. Запущенная IDE загрузит его автоматически, перезапуск не нужен; нажмите на строку состояния для настройки прокси.")
+    ExtInstallFailed = @("插件安装失败（退出码 {0}）。可在 IDE 扩展视图 → 右上角「…」→「从 VSIX 安装…」，选择：{1}", 'Extension install failed (exit code {0}). Install manually: Extensions view → "…" → "Install from VSIX…", then choose: {1}', "Не удалось установить расширение (код {0}). Установите вручную: «Расширения» → «…» → «Установить из VSIX…», файл: {1}")
 }
 
 function T([string]$Key) { return $script:Msg[$Key][$script:LangIndex] }
@@ -264,29 +281,35 @@ function Get-ReleaseChecksums([string]$Tag) {
     return $map
 }
 
-# 下载并解压发布包到 %LOCALAPPDATA%\antigravity-proxy\<tag>\<variant>-win-<arch>，返回包目录；失败返回空串
-function Install-ReleasePackage([string]$Tag, [string]$Variant, [string]$Arch, $Checksums) {
-    $asset = "antigravity-proxy-$Tag-$Variant-win-$Arch.zip"
-    $expected = if ($Checksums) { $Checksums[$asset] } else { $null }
-    Write-Info ((T "Downloading") -f $asset)
-
-    $result = Invoke-Sources -Target "https://github.com/$($script:Repo)/releases/download/$Tag/$asset" -TimeoutSec 20 -State $expected -Validate {
+# 下载 Release 资产并校验（zip 与 vsix 都是 zip 格式）：镜像出错时可能返回 200 + HTML 错误页，先看魔数 PK；
+# 有校验清单时比对 SHA256，不一致换源。成功返回字节数组，全部失败返回 $null
+function Get-VerifiedAsset([string]$Tag, [string]$Asset, $Checksums) {
+    $expected = if ($Checksums) { $Checksums[$Asset] } else { $null }
+    Write-Info ((T "Downloading") -f $Asset)
+    $result = Invoke-Sources -Target "https://github.com/$($script:Repo)/releases/download/$Tag/$Asset" -TimeoutSec 20 -State $expected -Validate {
         param($b, $hash)
-        # 镜像出错时可能返回 200 + HTML 错误页，先看 zip 魔数
         if ($b.Length -lt 4 -or $b[0] -ne 0x50 -or $b[1] -ne 0x4B) { return (T "NotZip") }
         if ($hash -and (Get-Sha256Hex $b) -ne $hash) { return (T "HashMismatch") }
         return ""
     }
     if (-not $result) {
-        Write-Err ((T "DownloadFailed") -f $asset)
-        return ""
+        Write-Err ((T "DownloadFailed") -f $Asset)
+        return $null
     }
     if ($expected) { Write-Ok ((T "Verified") -f $result.Source) } else { Write-Dim ((T "NotVerified") -f $result.Source) }
+    return , $result.Bytes
+}
+
+# 下载并解压发布包到 %LOCALAPPDATA%\antigravity-proxy\<tag>\<variant>-win-<arch>，返回包目录；失败返回空串
+function Install-ReleasePackage([string]$Tag, [string]$Variant, [string]$Arch, $Checksums) {
+    $asset = "antigravity-proxy-$Tag-$Variant-win-$Arch.zip"
+    $bytes = Get-VerifiedAsset -Tag $Tag -Asset $asset -Checksums $Checksums
+    if (-not $bytes) { return "" }
 
     $pkgDir = Join-Path $script:Root "$Tag\$Variant-win-$Arch"
     $zipPath = Join-Path $script:Root "$asset.download"
     New-Item -ItemType Directory -Path $script:Root -Force | Out-Null
-    [IO.File]::WriteAllBytes($zipPath, $result.Bytes)
+    [IO.File]::WriteAllBytes($zipPath, $bytes)
     try {
         # 重新安装同一版本时先清空，避免旧文件残留
         if (Test-Path -LiteralPath $pkgDir) { Remove-Item -LiteralPath $pkgDir -Recurse -Force }
@@ -545,5 +568,71 @@ function Invoke-OnlineInstall {
     if (@($results | Where-Object { $_.Status -eq "fail" }).Count -gt 0) { $script:ExitCode = 2 }
 }
 
-Invoke-OnlineInstall
+# 只装插件：IDE 运行中 version.dll 被占用，完整部署（doctor Setup 先替换 DLL）会失败，因此单独下载 VSIX 安装
+function Invoke-ExtensionOnlyInstall {
+    Write-Host ""
+    Write-Host (T "ExtTitle") -ForegroundColor White
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    Initialize-WebProxy
+
+    $def = $script:ProductDefs | Where-Object { $_.Key -eq "ide" } | Select-Object -First 1
+    $dir = if (-not [string]::IsNullOrWhiteSpace($InstallDir)) { [IO.Path]::GetFullPath($InstallDir).TrimEnd('\') } else { Find-ProductDir $def }
+    if (-not $dir -or -not (Test-Path -LiteralPath (Join-Path $dir $def.Exe) -PathType Leaf)) {
+        Write-Err (T "ExtIdeNotFound")
+        $script:ExitCode = 3
+        return
+    }
+    $cli = Join-Path $dir "bin\antigravity-ide.cmd"
+    if (-not (Test-Path -LiteralPath $cli -PathType Leaf)) {
+        Write-Err ((T "ExtCliMissing") -f $cli)
+        $script:ExitCode = 3
+        return
+    }
+    $arch = Get-PeArch (Join-Path $dir $def.Exe)
+    if ($arch -ne "x64" -and $arch -ne "x86") {
+        Write-Warn ((T "ArchSkip") -f $def.Name, $arch)
+        $script:ExitCode = 3
+        return
+    }
+
+    $tag = Resolve-ReleaseTag
+    if (-not $tag) { $script:ExitCode = 3; return }
+    $asset = "antigravity-proxy-$tag-ide-extension-win-$arch.vsix"
+    if ($script:ReleaseAssets.Count -gt 0 -and $script:ReleaseAssets -notcontains $asset) {
+        Write-Err ((T "ExtAssetMissing") -f $tag)
+        $script:ExitCode = 3
+        return
+    }
+    $checksums = Get-ReleaseChecksums $tag
+    $bytes = Get-VerifiedAsset -Tag $tag -Asset $asset -Checksums $checksums
+    if (-not $bytes) { $script:ExitCode = 2; return }
+
+    # 安装包留在本机母本目录，安装失败时可手动「从 VSIX 安装」
+    $vsixDir = Join-Path $script:Root $tag
+    New-Item -ItemType Directory -Path $vsixDir -Force | Out-Null
+    $vsix = Join-Path $vsixDir "antigravity-proxy.vsix"
+    [IO.File]::WriteAllBytes($vsix, $bytes)
+
+    $cliArgs = @("--install-extension", $vsix, "--force")
+    if (-not [string]::IsNullOrWhiteSpace($ExtensionsDir)) { $cliArgs += @("--extensions-dir", $ExtensionsDir) }
+    if (-not [string]::IsNullOrWhiteSpace($UserDataDir)) { $cliArgs += @("--user-data-dir", $UserDataDir) }
+    Write-Info ((T "ExtInstalling") -f $dir)
+    # IDE 命令行成功时也会向 stderr 输出告警（PS 5.1 下会被包装成错误记录），这里只按退出码判定
+    $prevErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $cli @cliArgs 2>&1 | ForEach-Object { Write-Dim ("  " + [string]$_) }
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevErrorAction
+    }
+    if ($code -eq 0) {
+        Write-Ok (T "ExtInstalled")
+    } else {
+        Write-Err ((T "ExtInstallFailed") -f $code, $vsix)
+        $script:ExitCode = 2
+    }
+}
+
+if ($ExtensionOnly) { Invoke-ExtensionOnlyInstall } else { Invoke-OnlineInstall }
 if ($script:RunAsFile) { exit $script:ExitCode }

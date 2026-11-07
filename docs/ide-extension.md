@@ -149,18 +149,30 @@ StatusModel = { patch, configStatus, proxy, reach, pendingRestart }
 
 ## 7. DLL 侧插件安装提示
 
-`src/ide/IdeExtensionPrompt.cpp`：DLL 在 IDE 里加载后检查插件是否已安装，未安装则询问是否一键安装。
+`src/ide/IdeExtensionPrompt.cpp`：DLL 在 IDE 里加载后检查插件是否已安装，未安装时用**系统通知**轻提示（不抢焦点、不打断操作）。
 
-- 启用条件：进程是 `Antigravity IDE.exe` 主进程（命令行无 `--type=`、非 RunAsNode），且 DLL 同目录存在
-  `antigravity-proxy.vsix`（手动复制 `ide/` 全部文件、或启动器同步时具备；doctor / 在线安装自己装插件，不放 VSIX）。
+- 启用条件：进程是 `Antigravity IDE.exe` 主进程（命令行无 `--type=`、非 RunAsNode）。
 - 后台线程延迟 8 秒；扩展目录按 `--extensions-dir` > `VSCODE_PORTABLE\extensions` >
   `%USERPROFILE%\<product.json dataFolderName>\extensions` 确定，读 `extensions.json`（兜底看目录）判断是否已安装。
-- 三语询问框，**每个 DLL 版本只问一次**（`logs\ide-extension-prompt.marker`，按 DLL 路径 + 大小 + 修改时间）。
-- 选择安装：调用 `bin\antigravity-ide.cmd --install-extension <vsix> --force`（透传 `--extensions-dir` / `--user-data-dir`，
-  无窗口，清理 `ELECTRON_*` / `VSCODE_*` / `CHROME_CRASHPAD_*`，超时 180 秒）。
-- 实测：运行中的 IDE 会自动加载 CLI 刚安装的插件，**无需重启**，因此成功时不再弹窗，由插件的首次引导接管；
-  失败时提示手动安装方法。
-- 纯逻辑（主进程判定、参数解析、product.json、extensions.json）在 `IdeExtensionLogic.hpp`，由 `tests/test_ide_extension.cpp` 覆盖。
+- 通知：`Shell_NotifyIconW` 托盘气泡（Win10/11 显示为通知卡片），图标取 IDE 主程序；后台线程内建仅消息窗口
+  （`HWND_MESSAGE`）+ 消息循环，user32 / shell32 全部动态加载（version.dll 只静态链接 ws2_32 / winhttp）。
+  卡片约 5 秒后收进通知中心，托盘图标保留 **90 秒**，期间点击卡片、通知中心条目或托盘图标都算同意；到期未点击视为暂不安装。
+- **每个 DLL 版本只提示一次**（`logs\ide-extension-prompt.marker`，按 DLL 路径 + 大小 + 修改时间）：点击或忽略后写标记；
+  通知区域不可用（如资源管理器未运行）时不写标记，下次启动再提示。
+- DLL 同目录有 `antigravity-proxy.vsix`（手动复制 `ide/` 全部文件、或启动器同步时具备）：点击通知即视为同意，
+  调用 `bin\antigravity-ide.cmd --install-extension <vsix> --force`（透传 `--extensions-dir` / `--user-data-dir`，
+  无窗口，清理 `ELECTRON_*` / `VSCODE_*` / `CHROME_CRASHPAD_*`，超时 180 秒），失败时提示手动安装方法。
+- 只装了 DLL（同目录无 VSIX）：点击通知后弹确认框，**完整展示将执行的命令**；同意后打开可见的 Windows PowerShell 5.1 窗口，执行
+  `install-online.ps1 -ExtensionOnly`（与 README 一键命令同源，经 wget.la 获取脚本；只装插件，不动 DLL 与配置；透传扩展目录与用户数据目录）。
+  命令全程只用单引号（`IdeExtensionLogic.hpp` 的 `BuildOnlineInstallCommand`），包在 `try/catch` 里，结尾 `Read-Host` 等待回车，
+  出错时窗口不会一闪而过。
+- 在线安装窗口**以挂起方式创建后主动注入本 DLL**，下载流量与 IDE 一样走 `config.json` 中的代理（SOCKS5 / HTTP 均可）。
+  原因：只装了 DLL 的用户多数没开系统代理，powershell.exe 又不在注入目标内；实测直连 GitHub 超时，镜像不代理
+  `api.github.com`（获取最新版本号），不注入时安装必然失败。挂起创建的进程不经 CreateProcess Hook 处理，注入失败不阻断。
+- 日志：通知已显示 / 已收起 / 已点击 / 已忽略、确认或取消、执行的命令、窗口进程号、注入结果、窗口如何结束（退出码）与最终是否装上，均写入 `proxy-*.log`。
+- 实测：运行中的 IDE 会自动加载 CLI 刚安装的插件，**无需重启**，因此成功时不再弹窗，由插件的首次引导接管。
+- 纯逻辑（主进程判定、参数解析、product.json、extensions.json、PowerShell 单引号转义与在线安装命令）在 `IdeExtensionLogic.hpp`，
+  由 `tests/test_ide_extension.cpp` 覆盖。
 
 ## 8. 两段式重启器
 
@@ -234,4 +246,5 @@ IDE 没有“重启应用”命令（只有 `workbench.action.quit` / `reloadWin
 - 面板只编辑安装目录下的 `config.json`；`config-web.html` 仍可离线使用，两者校验规则一致。
 - 命令标题与设置描述只能跟随 IDE 显示语言；`antigravityProxy.language` 只影响运行时文案。
 - 首次引导每个 profile 只执行一次；之后可用命令「扫描本机代理」重新扫描。
-- DLL 侧安装提示依赖 DLL 同目录的 VSIX；通过 doctor / 在线安装部署时由脚本直接安装插件，不经过该提示。
+- 通过 doctor / 在线安装部署时由脚本直接安装插件，不经过 DLL 侧提示；只装了 DLL 时的在线安装需要能访问 GitHub（经代理）或镜像。
+- 系统开启「专注助手 / 勿扰」时通知卡片不弹出，只进通知中心；90 秒内未点击即按“忽略”处理，本 DLL 版本不再提示（可手动「从 VSIX 安装」或运行 `-ExtensionOnly`）。

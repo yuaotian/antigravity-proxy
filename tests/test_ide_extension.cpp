@@ -37,5 +37,21 @@ int main() {
     assert(ExtensionsJsonHasId("[{\"identifier\":{\"id\":\"Yuaotian.Antigravity-Proxy\"}}]", ExtensionId()));
     assert(!ExtensionsJsonHasId("[{\"identifier\":{\"id\":\"yuaotian.antigravity-proxy-lite\"}}]", ExtensionId()));
     assert(!ExtensionsJsonHasId("[]", ExtensionId()));
+
+    // PowerShell 单引号转义：普通单引号与 PowerShell 视为单引号的弯引号都要写两次，$ 原样保留
+    assert(QuotePsSingle(L"C:\\a b\\x") == L"'C:\\a b\\x'");
+    assert(QuotePsSingle(L"C:\\it's\\$env") == L"'C:\\it''s\\$env'");
+    assert(QuotePsSingle(L"a\x2019" L"b") == L"'a\x2019\x2019" L"b'");
+
+    // 在线安装命令：只含单引号（可放进 -Command "..."），可选参数为空时不出现
+    const std::wstring basic = BuildOnlineInstallCommand(L"C:\\Program Files\\Antigravity IDE", L"", L"", L"Press Enter");
+    assert(basic.find(L'"') == std::wstring::npos);
+    assert(basic.find(L"-ExtensionOnly -InstallDir 'C:\\Program Files\\Antigravity IDE'") != std::wstring::npos);
+    assert(basic.find(L"-ExtensionsDir") == std::wstring::npos);
+    assert(basic.find(L"-UserDataDir") == std::wstring::npos);
+    assert(basic.find(OnlineScriptUrl()) != std::wstring::npos);
+    assert(basic.size() > 13 && basic.substr(basic.size() - 13) == L"'Press Enter'");
+    const std::wstring custom = BuildOnlineInstallCommand(L"D:\\IDE", L"D:\\ext dir", L"D:\\ud", L"x");
+    assert(custom.find(L" -ExtensionsDir 'D:\\ext dir' -UserDataDir 'D:\\ud' }") != std::wstring::npos);
     return 0;
 }

@@ -101,4 +101,36 @@ inline bool ExtensionsJsonHasId(std::string json, std::string id) {
     return lower(json).find("\"" + lower(id) + "\"") != std::string::npos;
 }
 
+// 在线安装脚本地址：与 README 一键安装命令一致，经 wget.la 镜像获取（国内可直连）
+inline const wchar_t* OnlineScriptUrl() {
+    return L"https://wget.la/https://raw.githubusercontent.com/yuaotian/antigravity-proxy/main/scripts/install-online.ps1";
+}
+
+// PowerShell 单引号字符串：内部的单引号写两次。PowerShell 把 ‘ ’ ‚ ‛（U+2018~U+201B）也当单引号，一并转义。
+// 单引号内 $ 与反引号都不展开，路径原样传入
+inline std::wstring QuotePsSingle(const std::wstring& s) {
+    std::wstring out = L"'";
+    for (wchar_t c : s) {
+        out.push_back(c);
+        if (c == L'\'' || (c >= 0x2018 && c <= 0x201B)) out.push_back(c);
+    }
+    out.push_back(L'\'');
+    return out;
+}
+
+// 只装插件的在线安装命令（PowerShell 5.1 起可用，在可见终端中执行）：
+// 下载安装脚本 → 以脚本块调用 -ExtensionOnly；extensionsDir / userDataDir 非空时透传，装到当前 IDE 实例实际使用的位置。
+// 全程只用单引号，外层可直接放进 -Command "..."；try/catch 保证出错时窗口仍停留在 closePrompt，便于用户看到原因
+inline std::wstring BuildOnlineInstallCommand(const std::wstring& installDir, const std::wstring& extensionsDir,
+                                              const std::wstring& userDataDir, const std::wstring& closePrompt) {
+    std::wstring cmd = L"try { [Net.ServicePointManager]::SecurityProtocol=3072; "
+                       L"& ([scriptblock]::Create((New-Object Net.WebClient).DownloadString(";
+    cmd += QuotePsSingle(OnlineScriptUrl());
+    cmd += L"))) -ExtensionOnly -InstallDir " + QuotePsSingle(installDir);
+    if (!extensionsDir.empty()) cmd += L" -ExtensionsDir " + QuotePsSingle(extensionsDir);
+    if (!userDataDir.empty()) cmd += L" -UserDataDir " + QuotePsSingle(userDataDir);
+    cmd += L" } catch { Write-Host $_ -ForegroundColor Red }; Read-Host " + QuotePsSingle(closePrompt);
+    return cmd;
+}
+
 }  // namespace IdeExtension
