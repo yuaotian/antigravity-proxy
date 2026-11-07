@@ -10,8 +10,10 @@
 #include <sstream>
 #include <string>
 #include "core/Config.hpp"
+#include "core/DllIdentity.hpp"
 #include "core/Logger.hpp"
 #include "hooks/ProcessName.hpp"
+#include "ide/IdeExtensionPrompt.hpp"
 #include "update/UpdateChecker.hpp"
 
 // 前向声明
@@ -105,30 +107,6 @@ namespace {
         return result;
     }
 
-    static std::string GetDllIdentity() {
-        char modulePath[MAX_PATH] = {0};
-        HMODULE hModule = NULL;
-        if (!GetModuleHandleExA(
-            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            reinterpret_cast<LPCSTR>(&GetDllIdentity),
-            &hModule)) {
-            return "unknown-module";
-        }
-        DWORD len = GetModuleFileNameA(hModule, modulePath, MAX_PATH);
-        if (len == 0 || len >= MAX_PATH) {
-            return "unknown-module";
-        }
-
-        WIN32_FILE_ATTRIBUTE_DATA data{};
-        std::ostringstream oss;
-        oss << modulePath;
-        if (GetFileAttributesExA(modulePath, GetFileExInfoStandard, &data)) {
-            oss << "|size=" << data.nFileSizeHigh << ":" << data.nFileSizeLow
-                << "|mtime=" << data.ftLastWriteTime.dwHighDateTime << ":" << data.ftLastWriteTime.dwLowDateTime;
-        }
-        return oss.str();
-    }
-
     static std::string GetLoadNotifyMarkerPath(const std::string& logDir) {
         if (logDir.empty()) return "";
         return logDir + "\\load-notify-success.marker";
@@ -203,7 +181,7 @@ namespace {
 
         const std::string logDir = Core::Logger::GetLogDirectoryPath();
         const std::string markerPath = GetLoadNotifyMarkerPath(logDir);
-        const std::string identity = GetDllIdentity();
+        const std::string identity = Core::GetDllIdentity();
         const bool onceMode = config.uiLoadNotify == "once";
         if (success && onceMode && HasShownSuccessForCurrentBuild(markerPath, identity)) {
             return;
@@ -275,6 +253,8 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
             : "当前进程 " + processName + " 使用 NetworkService 旁路模式：仅安装进程创建 Hook");
         Hooks::Install(enableNetworkHooks);
         MaybeShowLoadNotifyAsync(true);
+        // IDE 主进程：检测配套插件是否安装，未安装时后台询问并一键安装（其它进程内部直接返回）
+        IdeExtension::MaybePromptInstallAsync(IsOpenUrlProtocolLaunch());
         // 更新检查默认关闭；启用后也只在后台异步提示，不阻塞 Hook 安装主流程。
         UpdateChecker::StartAsync();
         break;

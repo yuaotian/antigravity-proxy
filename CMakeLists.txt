@@ -77,6 +77,7 @@ set(SOURCES_PROXY
   "src/hooks/Hooks.cpp"
   "src/proxy/VersionProxy.cpp"
   "src/update/UpdateChecker.cpp"
+  "src/ide/IdeExtensionPrompt.cpp"
 )
 
 # Resources
@@ -203,6 +204,15 @@ if(BUILD_TESTS)
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
   )
   add_test(NAME process_name_tests COMMAND process_name_tests)
+
+  # IDE 配套插件检测纯逻辑（主进程判定、命令行参数、product.json、extensions.json）
+  add_executable(ide_extension_tests
+    "tests/test_ide_extension.cpp"
+  )
+  target_include_directories(ide_extension_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+  add_test(NAME ide_extension_tests COMMAND ide_extension_tests)
 
   add_executable(udp_policy_tests
     "tests/test_udp_policy.cpp"
