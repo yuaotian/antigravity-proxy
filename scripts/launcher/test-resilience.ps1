@@ -3,7 +3,11 @@
 # ============================================================================
 
 [CmdletBinding()]
-param()
+param(
+    # 被模拟的桌面端主程序名：Antigravity.exe（桌面版）或 Antigravity IDE.exe（IDE 2.6+）
+    [ValidateSet("Antigravity.exe", "Antigravity IDE.exe")]
+    [string]$AppExeName = "Antigravity.exe"
+)
 
 $ErrorActionPreference = "Stop"
 $TestRoot = Join-Path $env:TEMP ("antigravity_test_" + [Guid]::NewGuid().ToString("N"))
@@ -19,8 +23,8 @@ try {
 
     New-Item -ItemType Directory -Path $mockAppDir, $mockSourceDir, $mockDesktop, $mockStartMenu -Force | Out-Null
 
-    # Create dummy official Antigravity.exe
-    $mockOfficialExe = Join-Path $mockAppDir "Antigravity.exe"
+    # Create dummy official app executable
+    $mockOfficialExe = Join-Path $mockAppDir $AppExeName
     "MZ-MOCK-OFFICIAL-EXE" | Out-File -FilePath $mockOfficialExe -Encoding ASCII
 
     # Create patch source directory (ide)

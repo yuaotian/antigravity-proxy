@@ -4,7 +4,7 @@
 // ============================================================================
 // 功能特性:
 // 1. 采用 WIN32 GUI 子系统 (wWinMain)，天然零 CMD 黑框、零闪烁，彻底替代易被弃用和误报的 VBS 脚本
-// 2. 自动探测 Antigravity.exe 与 agy.exe 安装路径（配置文件 -> 常见目录 -> 注册表 -> 文件选择对话框）
+// 2. 自动探测 Antigravity.exe / Antigravity IDE.exe 与 agy.exe 安装路径（配置文件 -> 常见目录 -> 注册表 -> 文件选择对话框）
 // 3. 每次启动前自动校验并增量恢复 ide/ (version.dll, config.json) 与 cli/ 补丁，彻底免疫客户端自动更新覆盖
 // 4. 完整透传命令行参数，支持固定到任务栏 (Taskbar)、开始菜单 (Start Menu) 与桌面快捷方式
 // ============================================================================
@@ -37,9 +37,9 @@ AppLang DetectAppLang() {
 
 const wchar_t* GetMsgNotFound(AppLang lang) {
     switch (lang) {
-        case AppLang::Zh: return L"未能定位到 Antigravity.exe 安装目录，启动已取消。";
-        case AppLang::Ru: return L"Не удалось найти директорию Antigravity.exe. Запуск отменен.";
-        default: return L"Failed to locate Antigravity.exe installation directory. Launch aborted.";
+        case AppLang::Zh: return L"未能定位到 Antigravity.exe / Antigravity IDE.exe 安装目录，启动已取消。";
+        case AppLang::Ru: return L"Не удалось найти директорию Antigravity.exe / Antigravity IDE.exe. Запуск отменен.";
+        default: return L"Failed to locate the Antigravity.exe / Antigravity IDE.exe installation directory. Launch aborted.";
     }
 }
 
@@ -53,9 +53,9 @@ const wchar_t* GetMsgLaunchFail(AppLang lang) {
 
 const wchar_t* GetMsgDialogTitle(AppLang lang) {
     switch (lang) {
-        case AppLang::Zh: return L"请选择 Antigravity.exe 所在位置（仅首次需要）";
-        case AppLang::Ru: return L"Выберите расположение Antigravity.exe";
-        default: return L"Please select Antigravity.exe location (First time only)";
+        case AppLang::Zh: return L"请选择 Antigravity.exe / Antigravity IDE.exe 所在位置（仅首次需要）";
+        case AppLang::Ru: return L"Выберите расположение Antigravity.exe / Antigravity IDE.exe";
+        default: return L"Please select the Antigravity.exe / Antigravity IDE.exe location (First time only)";
     }
 }
 
@@ -215,6 +215,17 @@ void SyncDirectoryFiles(const std::wstring& srcDir, const std::wstring& dstDir) 
 }
 
 // 从注册表 Uninstall 项探测 Antigravity 安装目录
+// 桌面端主程序名：Antigravity.exe（桌面版）与 Antigravity IDE.exe（IDE 2.6+，VS Code 二开）
+// 返回目录中存在的主程序完整路径；均不存在时返回空串
+std::wstring FindAppExe(const std::wstring& dir) {
+    if (dir.empty()) return L"";
+    for (const wchar_t* name : { L"Antigravity.exe", L"Antigravity IDE.exe" }) {
+        std::wstring candidate = JoinPath(dir, name);
+        if (FileExists(candidate)) return candidate;
+    }
+    return L"";
+}
+
 std::wstring FindAppInRegistry(HKEY hRootKey, const wchar_t* subKey) {
     HKEY hKey = nullptr;
     if (RegOpenKeyExW(hRootKey, subKey, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
@@ -238,7 +249,7 @@ std::wstring FindAppInRegistry(HKEY hRootKey, const wchar_t* subKey) {
                 DWORD locSize = sizeof(installLoc);
                 if (RegQueryValueExW(hItem, L"InstallLocation", nullptr, nullptr, reinterpret_cast<LPBYTE>(installLoc), &locSize) == ERROR_SUCCESS) {
                     std::wstring candidate = Trim(installLoc);
-                    if (!candidate.empty() && FileExists(JoinPath(candidate, L"Antigravity.exe"))) {
+                    if (!candidate.empty() && !FindAppExe(candidate).empty()) {
                         result = candidate;
                         RegCloseKey(hItem);
                         break;
@@ -254,25 +265,28 @@ std::wstring FindAppInRegistry(HKEY hRootKey, const wchar_t* subKey) {
     return result;
 }
 
-// 自动探测 Antigravity.exe 主程序目录
-std::wstring DetectAntigravityDir(const std::wstring& rootDir) {
+// 自动探测 Antigravity.exe / Antigravity IDE.exe 主程序目录
+std::wstring DetectAntigravityDir(const std::wstring& rootDir, AppLang lang) {
     std::wstring configFile = JoinPath(rootDir, L"app_path.txt");
     if (FileExists(configFile)) {
         std::wstring saved = ReadUtf8FileFirstLine(configFile);
-        if (!saved.empty() && FileExists(JoinPath(saved, L"Antigravity.exe"))) {
+        if (!saved.empty() && !FindAppExe(saved).empty()) {
             return saved;
         }
     }
 
+    // 保持既有顺序（桌面版优先），再补充 IDE 2.6+ 的默认安装目录；同时装有两者的用户可用 app_path.txt 指定
     std::vector<std::wstring> candidates = {
         JoinPath(GetEnvVar(L"LOCALAPPDATA"), L"Programs\\Antigravity"),
+        JoinPath(GetEnvVar(L"LOCALAPPDATA"), L"Programs\\Antigravity IDE"),
         JoinPath(GetEnvVar(L"LOCALAPPDATA"), L"Antigravity"),
         JoinPath(GetEnvVar(L"ProgramFiles"), L"Antigravity"),
+        JoinPath(GetEnvVar(L"ProgramFiles"), L"Antigravity IDE"),
         JoinPath(GetEnvVar(L"ProgramFiles(x86)"), L"Antigravity")
     };
 
     for (const auto& dir : candidates) {
-        if (!dir.empty() && FileExists(JoinPath(dir, L"Antigravity.exe"))) {
+        if (!dir.empty() && !FindAppExe(dir).empty()) {
             return dir;
         }
     }
@@ -289,15 +303,15 @@ std::wstring DetectAntigravityDir(const std::wstring& rootDir) {
     wchar_t filePath[MAX_PATH] = {0};
     OPENFILENAMEW ofn = {0};
     ofn.lStructSize = sizeof(ofn);
-    ofn.lpstrFilter = L"Antigravity 主程序 (Antigravity.exe)\0Antigravity.exe\0所有可执行文件 (*.exe)\0*.exe\0";
+    ofn.lpstrFilter = L"Antigravity (Antigravity.exe; Antigravity IDE.exe)\0Antigravity.exe;Antigravity IDE.exe\0*.exe\0*.exe\0";
     ofn.lpstrFile = filePath;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrTitle = L"请选择 Antigravity.exe 所在位置（仅首次需要）";
+    ofn.lpstrTitle = GetMsgDialogTitle(lang);
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
 
     if (GetOpenFileNameW(&ofn)) {
         std::wstring selectedDir = GetParentDir(filePath);
-        if (FileExists(JoinPath(selectedDir, L"Antigravity.exe"))) {
+        if (!FindAppExe(selectedDir).empty()) {
             WriteUtf8File(configFile, selectedDir);
             return selectedDir;
         }
@@ -342,7 +356,7 @@ void TrySyncCliPatch(const std::wstring& exeDir, const std::wstring& appDir) {
         JoinPath(GetEnvVar(L"LOCALAPPDATA"), L"Programs\\Antigravity CLI")
     };
     for (const auto& target : cliTargets) {
-        if (FileExists(JoinPath(target, L"agy.exe")) && !FileExists(JoinPath(target, L"Antigravity.exe"))) {
+        if (FileExists(JoinPath(target, L"agy.exe")) && FindAppExe(target).empty()) {
             SyncDirectoryFiles(cliSrc, target);
         }
     }
@@ -360,7 +374,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int) {
     }
 
     AppLang lang = DetectAppLang();
-    std::wstring appDir = DetectAntigravityDir(rootDir);
+    std::wstring appDir = DetectAntigravityDir(rootDir, lang);
     if (appDir.empty()) {
         MessageBoxW(nullptr,
                     GetMsgNotFound(lang),
@@ -377,7 +391,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int) {
     TrySyncCliPatch(exeDir, appDir);
 
     // 启动主程序并完整透传命令行参数
-    std::wstring targetExe = JoinPath(appDir, L"Antigravity.exe");
+    // 启动目录中实际存在的主程序（Antigravity.exe 或 Antigravity IDE.exe）
+    std::wstring targetExe = FindAppExe(appDir);
     std::wstring cmdArgs = (lpCmdLine != nullptr) ? lpCmdLine : L"";
 
     SHELLEXECUTEINFOW sei = {0};

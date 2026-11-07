@@ -77,8 +77,8 @@ $M = @{
         TaskbarNotice     = "💡 提示：因 Windows 11 安全策略限制，您可在桌面右键【Antigravity】图标 -> 选择【固定到任务栏】完美固定（已采用原生 EXE 架构，图标不分裂）。"
         DoneCliAll        = "🎉 CLI 代理补丁部署成功！现在可在终端中直接运行 agy 命令，流量将自动经由代理转发。"
         SelectAgyTitle          = "请选择 agy.exe 所在位置（仅首次需要）"
-        SelectIdeTitle          = "请选择 Antigravity.exe 所在位置（仅首次需要）"
-        NoIdeWarn               = "未在默认路径检测到 Antigravity.exe，请在弹出窗口中手动选择..."
+        SelectIdeTitle          = "请选择 Antigravity.exe / Antigravity IDE.exe 所在位置（仅首次需要）"
+        NoIdeWarn               = "未在默认路径检测到 Antigravity.exe / Antigravity IDE.exe，请在弹出窗口中手动选择..."
         NoAgyWarn               = "未在 PATH 或常见目录检测到 agy.exe。"
         NoAgyExpl               = "【说明】agy.exe 是 Antigravity 的终端命令行程序（CLI）。如果您平时是在图形窗口写代码，您需要的是【IDE 桌面版】补丁包，无需本 CLI 补丁。"
         NoAgyFoundIde           = "💡 检测到您的电脑已安装 Antigravity 桌面客户端：`n      {0}`n   但当前运行的是【CLI 命令行专用补丁向导】！`n   如果您平时是通过桌面图标打开软件，请改用【IDE 桌面版补丁包】(antigravity-proxy-*-ide-win-x64.zip)。"
@@ -141,8 +141,8 @@ $M = @{
         TaskbarNotice           = "💡 Note: To prevent update wipes, dedicated entry 'Antigravity (Proxy)' was created. Right-click it on Desktop -> [Pin to taskbar]."
         DoneCliAll              = "🎉 CLI proxy patch deployed successfully! You can now run agy in terminal through proxy."
         SelectAgyTitle          = "Please select agy.exe location (First time only)"
-        SelectIdeTitle          = "Please select Antigravity.exe location (First time only)"
-        NoIdeWarn               = "Antigravity.exe not detected in default paths. Please select manually..."
+        SelectIdeTitle          = "Please select the Antigravity.exe / Antigravity IDE.exe location (First time only)"
+        NoIdeWarn               = "Antigravity.exe / Antigravity IDE.exe not detected in default paths. Please select manually..."
         NoAgyWarn               = "agy.exe not detected in PATH or standard paths."
         NoAgyExpl               = "[Note] agy.exe is the command-line tool (CLI). If you use the graphical editor, you need the [IDE Desktop] package instead."
         NoAgyFoundIde           = "💡 Antigravity Desktop IDE detected at:`n      {0}`n   However, you are currently running the [CLI Console Patch Wizard]!`n   If you normally use the desktop application, please use the [IDE Desktop Package] (antigravity-proxy-*-ide-win-x64.zip)."
@@ -205,8 +205,8 @@ $M = @{
         TaskbarNotice           = "💡 Совет: Чтобы избежать сброса при обновлениях, создан ярлык «Antigravity (Прокси)». Нажмите правой кнопкой на Рабочем столе -> [Закрепить на панели задач]."
         DoneCliAll              = "🎉 Патч для CLI успешно установлен! Теперь запускайте agy в терминале через прокси."
         SelectAgyTitle          = "Укажите расположение agy.exe (Только в первый раз)"
-        SelectIdeTitle          = "Укажите расположение Antigravity.exe (Только в первый раз)"
-        NoIdeWarn               = "Antigravity.exe не найден в стандартных папках. Выберите вручную..."
+        SelectIdeTitle          = "Укажите расположение Antigravity.exe / Antigravity IDE.exe (Только в первый раз)"
+        NoIdeWarn               = "Antigravity.exe / Antigravity IDE.exe не найден в стандартных папках. Выберите вручную..."
         NoAgyWarn               = "agy.exe не найден в PATH или стандартных папках."
         NoAgyExpl               = "[Пояснение] agy.exe — это консольная утилита (CLI). Если вы используете графический редактор, вам нужен пакет [IDE Desktop]."
         NoAgyFoundIde           = "💡 Обнаружен Antigravity Desktop:`n      {0}`n   Однако запущен [Мастер патча для CLI]!`n   Если вы работаете в графическом интерфейсе, используйте [IDE Desktop пакет] (antigravity-proxy-*-ide-win-x64.zip)."
@@ -303,6 +303,19 @@ function Write-Ok([string]$Text)   { Write-Host "[✓] $Text" -ForegroundColor G
 function Write-Warn([string]$Text) { Write-Host "[!] $Text" -ForegroundColor Magenta }
 function Write-Err([string]$Text)  { Write-Host "[✗] $Text" -ForegroundColor Red }
 
+# 桌面端主程序名：Antigravity.exe（桌面版）与 Antigravity IDE.exe（IDE 2.6+，VS Code 二开）
+$Script:AppExeNames = @("Antigravity.exe", "Antigravity IDE.exe")
+
+# 返回目录中存在的主程序完整路径；均不存在时返回空串
+function Get-AntigravityExePath([string]$Dir) {
+    if ([string]::IsNullOrWhiteSpace($Dir)) { return "" }
+    foreach ($name in $Script:AppExeNames) {
+        $p = Join-Path $Dir $name
+        if (Test-Path -LiteralPath $p) { return $p }
+    }
+    return ""
+}
+
 # ============================================================================
 # 核心探测：产品形态 (IDE vs CLI)
 # ============================================================================
@@ -367,19 +380,21 @@ function Find-CliPatchSourceDir {
 function Find-AntigravityDir([bool]$AllowDialog = $false) {
     if (Test-Path -LiteralPath $ConfigPathFile) {
         $savedPath = (Get-Content -LiteralPath $ConfigPathFile -Raw -Encoding UTF8).Trim()
-        if (-not [string]::IsNullOrWhiteSpace($savedPath) -and (Test-Path (Join-Path $savedPath "Antigravity.exe"))) {
+        if (-not [string]::IsNullOrWhiteSpace($savedPath) -and (Get-AntigravityExePath $savedPath)) {
             return $savedPath
         }
     }
 
     $candidates = @(
         (Join-Path $env:LOCALAPPDATA "Programs\Antigravity"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Antigravity IDE"),
         (Join-Path $env:LOCALAPPDATA "Antigravity"),
         (Join-Path $env:ProgramFiles "Antigravity"),
+        (Join-Path $env:ProgramFiles "Antigravity IDE"),
         (Join-Path ${env:ProgramFiles(x86)} "Antigravity")
     )
     foreach ($dir in $candidates) {
-        if ($dir -and (Test-Path (Join-Path $dir "Antigravity.exe"))) {
+        if ($dir -and (Get-AntigravityExePath $dir)) {
             return $dir
         }
     }
@@ -390,7 +405,7 @@ function Find-AntigravityDir([bool]$AllowDialog = $false) {
             Select-Object -First 1
         if ($found) {
             $loc = $found.InstallLocation.Trim().TrimEnd('\', '/')
-            if (Test-Path (Join-Path $loc "Antigravity.exe")) {
+            if (Get-AntigravityExePath $loc) {
                 return $loc
             }
         }
@@ -400,7 +415,7 @@ function Find-AntigravityDir([bool]$AllowDialog = $false) {
         Write-Warn (T "NoIdeWarn")
         Add-Type -AssemblyName System.Windows.Forms
         $dlg = New-Object System.Windows.Forms.OpenFileDialog
-        $dlg.Filter = "Antigravity.exe|Antigravity.exe|All Exe (*.exe)|*.exe"
+        $dlg.Filter = "Antigravity (Antigravity.exe; Antigravity IDE.exe)|Antigravity.exe;Antigravity IDE.exe|All Exe (*.exe)|*.exe"
         $dlg.Title = T "SelectIdeTitle"
         if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $selectedFile = [System.IO.Path]::GetFileName($dlg.FileName)
@@ -416,7 +431,7 @@ function Find-AntigravityDir([bool]$AllowDialog = $false) {
                 return ""
             }
             $selectedDir = [System.IO.Path]::GetDirectoryName($dlg.FileName)
-            if (Test-Path (Join-Path $selectedDir "Antigravity.exe")) {
+            if (Get-AntigravityExePath $selectedDir) {
                 $selectedDir | Out-File -FilePath $ConfigPathFile -Encoding UTF8 -NoNewline
                 return $selectedDir
             }
@@ -489,7 +504,7 @@ function Find-AgyDir([bool]$AllowDialog = $false) {
         $dlg.Title = T "SelectAgyTitle"
         if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $selectedFile = [System.IO.Path]::GetFileName($dlg.FileName)
-            if ($selectedFile -ieq "Antigravity.exe") {
+            if ($Script:AppExeNames -contains $selectedFile) {
                 Write-Host ""
                 Write-Err (T "ErrSelectedIde")
                 [System.Windows.Forms.MessageBox]::Show(
@@ -521,11 +536,11 @@ function Ensure-NativeLauncherExe([string]$TargetAppDir) {
 
     Write-Info "Compiling Native Win32 Launcher AntigravityLauncher.exe..."
     $iconFile = Join-Path $LauncherDir "antigravity.ico"
-    $targetExePath = Join-Path $TargetAppDir "Antigravity.exe"
+    $targetExePath = Get-AntigravityExePath $TargetAppDir
 
     try {
         Add-Type -AssemblyName System.Drawing
-        if (Test-Path $targetExePath) {
+        if ($targetExePath -and (Test-Path $targetExePath)) {
             $ico = [System.Drawing.Icon]::ExtractAssociatedIcon($targetExePath)
             if ($ico) {
                 $fs = New-Object System.IO.FileStream($iconFile, [System.IO.FileMode]::Create)
@@ -544,6 +559,16 @@ using System.Text;
 using System.Windows.Forms;
 
 public static class AntigravityLauncher {
+    // 桌面端主程序名：Antigravity.exe（桌面版）与 Antigravity IDE.exe（IDE 2.6+）
+    static string FindAppExe(string dir) {
+        if (string.IsNullOrEmpty(dir)) return null;
+        foreach (string name in new string[] { "Antigravity.exe", "Antigravity IDE.exe" }) {
+            string p = Path.Combine(dir, name);
+            if (File.Exists(p)) return p;
+        }
+        return null;
+    }
+
     [STAThread]
     public static int Main(string[] args) {
         try {
@@ -559,7 +584,7 @@ public static class AntigravityLauncher {
             string savedCfg = Path.Combine(rootDir, "app_path.txt");
             if (File.Exists(savedCfg)) {
                 string line = File.ReadAllText(savedCfg, Encoding.UTF8).Trim();
-                if (!string.IsNullOrEmpty(line) && File.Exists(Path.Combine(line, "Antigravity.exe"))) {
+                if (!string.IsNullOrEmpty(line) && FindAppExe(line) != null) {
                     appDir = line;
                 }
             }
@@ -567,18 +592,19 @@ public static class AntigravityLauncher {
             if (string.IsNullOrEmpty(appDir)) {
                 string[] candidates = new string[] {
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\Antigravity"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\Antigravity IDE"),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Antigravity"),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Antigravity")
                 };
                 foreach (string c in candidates) {
-                    if (File.Exists(Path.Combine(c, "Antigravity.exe"))) { appDir = c; break; }
+                    if (FindAppExe(c) != null) { appDir = c; break; }
                 }
             }
 
             if (string.IsNullOrEmpty(appDir)) {
                 OpenFileDialog dlg = new OpenFileDialog();
-                dlg.Filter = "Antigravity.exe|Antigravity.exe";
-                dlg.Title = "Select Antigravity.exe location";
+                dlg.Filter = "Antigravity|Antigravity.exe;Antigravity IDE.exe";
+                dlg.Title = "Select Antigravity.exe / Antigravity IDE.exe location";
                 if (dlg.ShowDialog() == DialogResult.OK) {
                     appDir = Path.GetDirectoryName(dlg.FileName);
                     File.WriteAllText(savedCfg, appDir, Encoding.UTF8);
@@ -623,7 +649,7 @@ public static class AntigravityLauncher {
                 }
             }
 
-            string targetExe = Path.Combine(appDir, "Antigravity.exe");
+            string targetExe = FindAppExe(appDir) ?? Path.Combine(appDir, "Antigravity.exe");
             ProcessStartInfo psi = new ProcessStartInfo(targetExe);
             psi.WorkingDirectory = appDir;
             if (args != null && args.Length > 0) {
@@ -809,7 +835,7 @@ function Install-DesktopShortcut([string]$LauncherPath, [string]$TargetAppDir) {
     $desktop = [Environment]::GetFolderPath("Desktop")
     $targetLnkName = (T "ShortcutName")
     $targetLnkPath = Join-Path $desktop $targetLnkName
-    $origExe = Join-Path $TargetAppDir "Antigravity.exe"
+    $origExe = Get-AntigravityExePath $TargetAppDir
 
     # 清理所有历史旧版本或不同语系的代理启动器快捷方式，同时严禁删除官方原生快捷方式
     foreach ($known in $Global:AllKnownShortcutNames) {
@@ -832,7 +858,7 @@ function Install-StartMenuShortcut([string]$LauncherPath, [string]$TargetAppDir)
     $programs = [Environment]::GetFolderPath("Programs")
     $targetLnkName = (T "ShortcutName")
     $targetLnkPath = Join-Path $programs $targetLnkName
-    $origExe = Join-Path $TargetAppDir "Antigravity.exe"
+    $origExe = Get-AntigravityExePath $TargetAppDir
 
     # 清理所有历史旧版本或不同语系的代理启动器快捷方式，同时严禁删除官方原生快捷方式
     foreach ($known in $Global:AllKnownShortcutNames) {
@@ -852,7 +878,7 @@ function Install-StartMenuShortcut([string]$LauncherPath, [string]$TargetAppDir)
 }
 
 function Install-TaskbarPin([string]$LauncherPath, [string]$TargetAppDir) {
-    $origExe = Join-Path $TargetAppDir "Antigravity.exe"
+    $origExe = Get-AntigravityExePath $TargetAppDir
     $appData = $env:APPDATA
     $tbDir = Join-Path $appData "Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
     $targetLnkName = (T "ShortcutName")
@@ -1200,7 +1226,7 @@ while ($true) {
         "6" {
             if (-not $isCli) {
                 Write-Title (T "TitleDiag")
-                Write-Host "Antigravity.exe: $targetDir\Antigravity.exe"
+                Write-Host "App: $(Get-AntigravityExePath $targetDir)"
                 Write-Host "version.dll: $(Test-Path (Join-Path $targetDir 'version.dll'))"
                 Write-Host "config.json: $(Test-Path (Join-Path $targetDir 'config.json'))"
                 Read-Host (T "PressEnterReturn")
