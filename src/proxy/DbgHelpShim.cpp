@@ -306,6 +306,10 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         g_shimModule = module;
         DisableThreadLibraryCalls(module);
+        // 在 DLL 注入阶段同步装载 CLI 代理主体。
+        // agy.exe 正常运行期间不会主动调用 SymFromAddr 等符号导出，
+        // 若依赖导出函数懒加载会导致 antigravity_proxy.dll 永远无法被装载 (Issue #149)。
+        EnsureProxyLoadedForCli();
     }
     return TRUE;
 }
