@@ -302,26 +302,26 @@ curl -x http://127.0.0.1:7890 https://www.google.com -I
 
 В большинстве случаев Antigravity устанавливается по адресу:
 
-`C:Users<имя_пользователя>AppDataLocalProgramsAntigravity`
+`C:\Users\<имя_пользователя>\AppData\Local\Programs\Antigravity\`
 
-Пример: `C:UsersyuaotianAppDataLocalProgramsAntigravity`
+Пример: `C:\Users\yuaotian\AppData\Local\Programs\Antigravity`
 
 Если каталог не удается найти, найдите ярлык Antigravity на рабочем столе или в меню «Пуск», затем выберите **правой кнопкой мыши → Расположение файла**. Открытый каталог и будет основным каталогом Antigravity.
 
 Быстрый переход из терминала:
 
 ```powershell
-cd "$env:LOCALAPPDATAProgramsAntigravity"
+cd "$env:LOCALAPPDATA\Programs\Antigravity"
 ```
 
 ```bat
-cd /d "%LOCALAPPDATA%ProgramsAntigravity"
+cd /d "%LOCALAPPDATA%\Programs\Antigravity"
 ```
 
 При желании задайте собственную переменную окружения для быстрого перехода:
 
 ```bat
-setx ANTIGRAVITY_HOME "%LOCALAPPDATA%ProgramsAntigravity"
+setx ANTIGRAVITY_HOME "%LOCALAPPDATA%\Programs\Antigravity"
 ```
 
 После этого используйте `cd $env:ANTIGRAVITY_HOME` в PowerShell или `cd /d %ANTIGRAVITY_HOME%` в CMD.
@@ -359,16 +359,16 @@ setx ANTIGRAVITY_HOME "%LOCALAPPDATA%ProgramsAntigravity"
 Журналы — основной источник информации для диагностики.
 
 **Расположение журналов** (в порядке приоритета):
-1. `<Каталог установки Antigravity>logsproxy-YYYYMMDD.log`
-2. `%TEMP%antigravity-proxy-logsproxy-YYYYMMDD.log`
+1. `<Каталог установки Antigravity>\logs\proxy-YYYYMMDD.log`
+2. `%TEMP%\antigravity-proxy-logs\proxy-YYYYMMDD.log`
 
 **Быстрый доступ**:
 ```powershell
 # Открыть каталог logs рядом с DLL
-cd "$env:LOCALAPPDATAProgramsAntigravitylogs"
+cd "$env:LOCALAPPDATA\Programs\Antigravity\logs"
 
 # Или открыть каталог TEMP
-cd "$env:TEMPantigravity-proxy-logs"
+cd "$env:TEMP\antigravity-proxy-logs"
 ```
 
 **Расшифровка основных строк журнала**:
@@ -629,19 +629,19 @@ Get-NetAdapterBinding -ComponentID ms_tcpip6
 
 ```powershell
 # Сборка по умолчанию: Release x64
-.uild.ps1
+.\build.ps1
 
 # Сборка версии Debug
-.uild.ps1 -Config Debug
+.\build.ps1 -Config Debug
 
 # Сборка 32-разрядной версии
-.uild.ps1 -Arch x86
+.\build.ps1 -Arch x86
 
 # Очистка и повторная сборка
-.uild.ps1 -Clean
+.\build.ps1 -Clean
 
 # Показать справку
-.uild.ps1 -Help
+.\build.ps1 -Help
 ```
 
 ### Ручная сборка
@@ -728,7 +728,7 @@ target_link_libraries(version PRIVATE ws2_32)
 
 | Код ошибки | Описание | Возможная причина | Решение |
 |------------|----------|-------------------|---------|
-| `VCRUNTIME140_1.dll missing` | Системная ошибка: «VCRUNTIME140_1.dll was not found» | Среда выполнения VC++ 2015-2022 не установлена или удалена защитным ПО | Установите VC++ 2015-2022 Redistributable (x64/x86)<br>Или соберите со статической средой выполнения: `.uild.ps1 -StaticRuntime` |
+| `VCRUNTIME140_1.dll missing` | Системная ошибка: «VCRUNTIME140_1.dll was not found» | Среда выполнения VC++ 2015-2022 не установлена или удалена защитным ПО | Установите VC++ 2015-2022 Redistributable (x64/x86)<br>Или соберите со статической средой выполнения: `.\build.ps1 -StaticRuntime` |
 
 ---
 
@@ -891,7 +891,8 @@ target_link_libraries(version PRIVATE ws2_32)
 Затем скопируйте `version.dll` и `config.json` в каталог установки Chrome:
 
 ```
-C:Program FilesGoogleChromeApplication├── chrome.exe
+C:\Program Files\Google\Chrome\Application\
+├── chrome.exe
 ├── version.dll      ← Поместить сюда
 └── config.json      ← Поместить сюда
 ```
@@ -899,7 +900,8 @@ C:Program FilesGoogleChromeApplication├── chrome.exe
 #### Пример 2. Принудительное проксирование VS Code
 
 ```
-C:UsersYourUsernameAppDataLocalProgramsMicrosoft VS Code├── Code.exe
+C:\Users\YourUsername\AppData\Local\Programs\Microsoft VS Code\
+├── Code.exe
 ├── version.dll      ← Поместить сюда
 └── config.json      ← Поместить сюда
 ```
