@@ -3714,6 +3714,21 @@ BOOL WINAPI DetourGetQueuedCompletionStatusEx(
 
 // ============= Phase 2: CreateProcessW Hook =============
 
+// 目标子进程创建失败时的诊断日志（Issue #159）：
+// 原逻辑仅在 CreateProcess 成功后记录“注入/跳过”，若目标进程（例如 IDE 2.6.0 起由扩展下载到
+// ~/.gemini/bin 的 agy.exe --hub 后端）因文件缺失、下载不完整或被安全软件拦截而创建失败，
+// 日志中完全没有痕迹，无法区分“未注入”与“根本没启动”。
+// 仅对命中 target_processes 的目标记录，避免普通子进程失败刷屏；LastError 由调用方负责恢复。
+static void LogTargetCreateProcessFailure(const char* api, const std::string& appName, DWORD createErr) {
+    if (appName.empty()) return;
+    const auto& config = Core::Config::Instance();
+    if (!config.ShouldInject(appName)) return;
+    Core::Logger::Warn(std::string("[失败] 目标子进程创建失败(未进入注入流程): api=") + api +
+                       ", target_basename=" + appName +
+                       ", GetLastError=" + std::to_string(createErr) +
+                       "（常见原因：可执行文件不存在/下载不完整(2/3)、被安全软件拦截(5/225)）");
+}
+
 BOOL WINAPI DetourCreateProcessW(
     LPCWSTR lpApplicationName,
     LPWSTR lpCommandLine,
@@ -3808,8 +3823,14 @@ BOOL WINAPI DetourCreateProcessW(
                 ResumeCreatedProcessThread(*lpProcessInformation, diagnosticContext);
             }
         }
+    } else if (!result && config.childInjection) {
+        // 创建失败：先保存原始错误码，记录诊断后原样恢复，保证调用方（如 Node spawn）拿到真实错误
+        const DWORD createErr = GetLastError();
+        LogTargetCreateProcessFailure("CreateProcessW",
+                                      GetCreateProcessTargetBaseNameW(lpApplicationName, lpCommandLine), createErr);
+        SetLastError(createErr);
     }
-    
+
     return result;
 }
 
@@ -3911,8 +3932,14 @@ BOOL WINAPI DetourCreateProcessA(
                 ResumeCreatedProcessThread(*lpProcessInformation, diagnosticContext);
             }
         }
+    } else if (!result && config.childInjection) {
+        // 创建失败：先保存原始错误码，记录诊断后原样恢复，保证调用方拿到真实错误
+        const DWORD createErr = GetLastError();
+        LogTargetCreateProcessFailure("CreateProcessA",
+                                      GetCreateProcessTargetBaseNameA(lpApplicationName, lpCommandLine), createErr);
+        SetLastError(createErr);
     }
-    
+
     return result;
 }
 
