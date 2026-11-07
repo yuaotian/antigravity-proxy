@@ -456,6 +456,122 @@ Assert-HasCode -Name "退出码非 0 判定为安装失败并告警" -Code "Exte
 
 Reset-State
 
+Write-Host ""
+Write-Host "== 用例 14: 代理协议探测与类型错配 ==" -ForegroundColor White
+
+# 在独立 runspace 中起一个只会一种协议的本地假代理：socks5 只回 SOCKS5 问候；http 对任何请求都回 HTTP 502
+function Start-FakeProxy {
+    param([ValidateSet("socks5", "http")][string]$Kind)
+    $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    $ps = [PowerShell]::Create()
+    [void]$ps.AddScript({
+        param($listener, $kind)
+        while ($true) {
+            try { $client = $listener.AcceptTcpClient() } catch { break }
+            try {
+                $stream = $client.GetStream()
+                $stream.ReadTimeout = 3000
+                $buffer = New-Object byte[] 512
+                $read = $stream.Read($buffer, 0, $buffer.Length)
+                if ($kind -eq "socks5") {
+                    if ($read -gt 0 -and $buffer[0] -eq 5) { $stream.Write([byte[]](5, 0), 0, 2) }
+                } else {
+                    $resp = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 502 Bad Gateway`r`nContent-Length: 0`r`n`r`n")
+                    $stream.Write($resp, 0, $resp.Length)
+                }
+                Start-Sleep -Milliseconds 50
+            } catch { } finally { $client.Close() }
+        }
+    }).AddArgument($listener).AddArgument($Kind)
+    [void]$ps.BeginInvoke()
+    return [pscustomobject]@{ Port = $listener.LocalEndpoint.Port; Listener = $listener; Shell = $ps }
+}
+
+function Stop-FakeProxy {
+    param($Fake)
+    try { $Fake.Listener.Stop() } catch { }
+    try { $Fake.Shell.Stop(); $Fake.Shell.Dispose() } catch { }
+}
+
+$fakeSocks = Start-FakeProxy -Kind "socks5"
+$fakeHttp = Start-FakeProxy -Kind "http"
+try {
+    Assert-Equal -Name "仅 SOCKS5 的端口识别为 socks5" -Expected "socks5" -Actual (Test-ProxyProtocol -Port $fakeSocks.Port)
+    Assert-Equal -Name "仅 HTTP 的端口识别为 http" -Expected "http" -Actual (Test-ProxyProtocol -Port $fakeHttp.Port)
+    $closedListener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, 0)
+    $closedListener.Start(); $closedPort = $closedListener.LocalEndpoint.Port; $closedListener.Stop()
+    Assert-Equal -Name "未监听端口返回空" -Expected "" -Actual (Test-ProxyProtocol -Port $closedPort)
+
+    # Diagnose：socks5 配到 HTTP 端口 → ProxyTypeMismatch（Fail）
+    Reset-State
+    $fx14 = New-Fixture
+    $mismatch = [pscustomobject]@{
+        proxy            = @{ type = "socks5"; host = "127.0.0.1"; port = $fakeHttp.Port }
+        child_injection  = $true
+        target_processes = @("Antigravity.exe", "language_server.exe")
+    }
+    [IO.File]::WriteAllText((Join-Path $fx14.Install "config.json"), ($mismatch | ConvertTo-Json -Depth 10))
+    Test-ConfigContent -BaseDir $fx14.Install -Variant "ide" | Out-Null
+    Assert-HasCode -Name "socks5 配到 HTTP 端口被判定为错误" -Code "ProxyTypeMismatch" -Level "Fail"
+
+    # 类型正确（https 归一为 http）时不误报
+    Reset-State
+    $mismatch.proxy.type = "https"
+    [IO.File]::WriteAllText((Join-Path $fx14.Install "config.json"), ($mismatch | ConvertTo-Json -Depth 10))
+    Test-ConfigContent -BaseDir $fx14.Install -Variant "ide" | Out-Null
+    Assert-NoCode -Name "https 按 http 处理，不误报类型错配" -Code "ProxyTypeMismatch"
+
+    # Setup：未指定类型时按探测结果写入
+    Reset-State
+    Remove-Item -LiteralPath (Join-Path $fx14.Install "config.json") -Force
+    $ProxyPort = $fakeHttp.Port
+    $resolved = Resolve-ProxySettings $fx14.Install
+    $ProxyPort = 0
+    Assert-Equal -Name "Setup 对 HTTP 端口自动写入 http" -Expected "http" -Actual $resolved.Type
+    Assert-HasCode -Name "记录协议探测结果" -Code "ProxyTypeDetected" -Level "Info"
+
+    # Setup：显式类型与端口不符时告警（不擅自改写）
+    Reset-State
+    $ProxyPort = $fakeSocks.Port; $ProxyType = "http"
+    $resolved = Resolve-ProxySettings $fx14.Install
+    $ProxyPort = 0; $ProxyType = ""
+    Assert-Equal -Name "显式指定的类型保持不变" -Expected "http" -Actual $resolved.Type
+    Assert-HasCode -Name "显式类型与端口不符时告警" -Code "ProxyTypeMismatch" -Level "Warn"
+} finally {
+    Stop-FakeProxy $fakeSocks
+    Stop-FakeProxy $fakeHttp
+}
+
+Write-Host ""
+Write-Host "== 用例 15: Antigravity IDE 配置缺少 agy.exe ==" -ForegroundColor White
+
+Reset-State
+$ide15 = Join-Path $script:FixtureRoot "install-ide-agy"
+New-Item -ItemType Directory -Path $ide15 -Force | Out-Null
+New-PeStub -Path (Join-Path $ide15 "Antigravity IDE.exe")
+$noAgy = [pscustomobject]@{
+    proxy                = @{ type = "socks5"; host = "127.0.0.1"; port = 1 }
+    child_injection      = $true
+    child_injection_mode = "filtered"
+    target_processes     = @("Antigravity IDE.exe", "language_server.exe", "node.exe")
+}
+[IO.File]::WriteAllText((Join-Path $ide15 "config.json"), ($noAgy | ConvertTo-Json -Depth 10))
+Test-ConfigContent -BaseDir $ide15 -Variant "ide" | Out-Null
+Assert-HasCode -Name "IDE 配置缺少 agy.exe 被判定为错误" -Code "TargetProcessesMissingAgy" -Level "Fail"
+
+Reset-State
+$noAgy.target_processes = @("agy.exe", "Antigravity IDE.exe", "language_server.exe", "node.exe")
+[IO.File]::WriteAllText((Join-Path $ide15 "config.json"), ($noAgy | ConvertTo-Json -Depth 10))
+Test-ConfigContent -BaseDir $ide15 -Variant "ide" | Out-Null
+Assert-NoCode -Name "包含 agy.exe 时不报错" -Code "TargetProcessesMissingAgy"
+
+Reset-State
+Test-ConfigContent -BaseDir $fx.Install -Variant "ide" | Out-Null
+Assert-NoCode -Name "桌面版目录不检查 agy.exe" -Code "TargetProcessesMissingAgy"
+
+Reset-State
+
 # ---------------------------------------------------------------------------
 if (-not $KeepFixtures) {
     Remove-Item -LiteralPath $script:FixtureRoot -Recurse -Force -ErrorAction SilentlyContinue

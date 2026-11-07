@@ -60,7 +60,9 @@ README 里已经写了"更新后可能清理劫持文件，请重新复制"，�
 | `ArchMismatch` / `PatchFileInvalid` / `PatchDiffersFromSource` | Fail / Fail / Warn | x86 补丁配 x64 主程序、文件被截断、与母本内容不一致 |
 | `ConfigMissing` / `ConfigUnreadable` / `ConfigNotDeployed` | Fail / Fail / Info | 配置缺失或语法错误（JSONC 注释可容错解析） |
 | `ProxyPortUnreachable` / `ProxyPortReachable` | Fail / Pass | 直接 TCP 探测 `proxy.host:port`，并列出本机在听的相关端口 |
+| `ProxyTypeMismatch` | Fail | 端口可达但协议与 `proxy.type` 不符：先发 SOCKS5 问候（`05 01 00`，应答首字节 `0x05` 即 SOCKS5），否则发 `CONNECT`（应答以 `HTTP/` 开头即 HTTP）；混合端口两者皆可，不报错 |
 | `TargetProcessesMissingBackend` | Fail | `target_processes` 未覆盖 `language_server`，后端仍会直连（见 issue-85 文档） |
+| `TargetProcessesMissingAgy` | Fail | 安装目录有 `Antigravity IDE.exe`，但 `target_processes` 缺少其后端 `agy.exe`，对话不走代理（插件状态栏同步提示并可一键补齐） |
 | `ChildInjectionDisabled` / `AllowedPortsMissing443` / `FakeIpEnabled` | Warn / Warn / Info | 常见配置陷阱 |
 | `DllLoaded` / `DllNotLoaded` / `ChildNotInjected` | Pass / Fail / Fail | 按**模块路径是否位于该安装目录**判断，避免把 `System32\VERSION.dll` 误判成注入成功；无关的 `node.exe` 也不会算作后端子进程 |
 | `DllLoadedFromDeletedFile` | Warn | 文件已被删除，但运行中的进程还在使用内存里的旧镜像——下次启动就失效，应立刻修复 |

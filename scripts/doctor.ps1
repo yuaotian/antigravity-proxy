@@ -339,6 +339,50 @@ function Test-TcpPort {
     }
 }
 
+# DLL 把 https 当作 http 处理（Config.hpp），比较类型前先归一
+function Get-NormalizedProxyType {
+    param([string]$Type)
+    $t = ([string]$Type).Trim().ToLowerInvariant()
+    if ($t -eq "https") { return "http" }
+    return $t
+}
+
+# 探测端口实际使用的代理协议，返回 "socks5" / "http" / ""（不通或无法判断）。
+# 1) 先发 SOCKS5 问候 05 01 00：SOCKS5 / 混合端口会立即回 05 xx；
+# 2) 否则另起连接发 CONNECT 127.0.0.1:9（本机 discard 端口通常未监听，HTTP 代理会立即回 502 等错误，不必等上游节点）：
+#    回包以 "HTTP/" 开头即 HTTP 代理（407 需要认证也算）。
+# 背景：SOCKS5 配到 HTTP 端口（v2rayN 10809、Privoxy 8118 等）是“换了代理软件就不行”的最常见原因。
+function Test-ProxyProtocol {
+    param([string]$ComputerName = "127.0.0.1", [int]$Port = 0, [int]$TimeoutMs = 2000)
+    if ($Port -le 0) { return "" }
+    $exchange = {
+        param([byte[]]$Request)
+        $client = New-Object Net.Sockets.TcpClient
+        try {
+            $async = $client.ConnectAsync($ComputerName, $Port)
+            if (-not $async.Wait($TimeoutMs) -or -not $client.Connected) { return $null }
+            $stream = $client.GetStream()
+            $stream.ReadTimeout = $TimeoutMs
+            $stream.WriteTimeout = $TimeoutMs
+            $stream.Write($Request, 0, $Request.Length)
+            $buffer = New-Object byte[] 16
+            $read = $stream.Read($buffer, 0, $buffer.Length)
+            if ($read -le 0) { return $null }
+            return , ([byte[]]($buffer[0..($read - 1)]))
+        } catch {
+            return $null
+        } finally {
+            $client.Close()
+        }
+    }
+    $reply = & $exchange ([byte[]](5, 1, 0))
+    if ($reply -and $reply[0] -eq 5) { return "socks5" }
+    $connect = [Text.Encoding]::ASCII.GetBytes("CONNECT 127.0.0.1:9 HTTP/1.1`r`nHost: 127.0.0.1:9`r`n`r`n")
+    $reply = & $exchange $connect
+    if ($reply -and $reply.Length -ge 5 -and [Text.Encoding]::ASCII.GetString($reply, 0, 5) -eq "HTTP/") { return "http" }
+    return ""
+}
+
 function Confirm-Choice {
     param([string]$Question)
     if ($Yes) { return $true }
@@ -862,6 +906,15 @@ function Test-ConfigContent {
     if (Test-TcpPort -ComputerName $proxyHost -Port $proxyPort) {
         Add-Finding -Level "Pass" -Code "ProxyPortReachable" `
             -Message ("本地代理端口可达: {0}:{1}（{2}）" -f $proxyHost, $proxyPort, $config.proxy.type)
+        # 端口通但协议不符时 DLL 每次握手都失败，应用侧只看到 “198.18.x.x 被拒绝 / 超时”，必须在这里点明
+        $configuredType = Get-NormalizedProxyType ([string]$config.proxy.type)
+        $detectedType = Test-ProxyProtocol -ComputerName $proxyHost -Port $proxyPort
+        if ($detectedType -and $configuredType -and $detectedType -ne $configuredType) {
+            Add-Finding -Level "Fail" -Code "ProxyTypeMismatch" `
+                -Message ("端口 {0} 实际是 {1} 代理，但 config.json 的 proxy.type = {2}。" -f $proxyPort, $detectedType, $config.proxy.type) `
+                -Hint ("把 proxy.type 改为 {0}（或改用代理软件的混合端口），保存后重启应用。" -f $detectedType)
+            Add-Verdict ("代理类型与端口不符：把 proxy.type 改为 {0}。" -f $detectedType)
+        }
     } else {
         $listenCandidates = @($script:CommonProxyPorts | Where-Object { Test-TcpPort -ComputerName $proxyHost -Port $_ })
         $hint = "代理软件可能未启动，或端口不是这个。"
@@ -885,10 +938,13 @@ function Test-ConfigContent {
     }
 
     $targets = @($config.target_processes)
+    # 与 DLL 一致：未写 child_injection_mode 时按 filtered 处理（Config.hpp 默认值），否则缺省配置会跳过下面的覆盖检查
+    $injectionMode = ([string]$config.child_injection_mode).Trim().ToLowerInvariant()
+    if (-not $injectionMode) { $injectionMode = "filtered" }
     if ($targets.Count -eq 0) {
         Add-Finding -Level "Info" -Code "TargetProcessesEmpty" `
             -Message "target_processes 为空，按默认行为注入全部子进程。"
-    } elseif ([string]$config.child_injection_mode -eq "filtered") {
+    } elseif ($injectionMode -eq "filtered") {
         $covered = @($targets | Where-Object { ([string]$_).ToLowerInvariant().Contains("language_server") })
         if ($covered.Count -eq 0) {
             Add-Finding -Level "Fail" -Code "TargetProcessesMissingBackend" `
@@ -898,6 +954,14 @@ function Test-ConfigContent {
         } else {
             Add-Finding -Level "Pass" -Code "TargetProcessesCovered" `
                 -Message ("target_processes 覆盖关键进程: {0}" -f ($targets -join ", "))
+        }
+        # IDE 2.6 起后端改为 agy.exe --hub（~/.gemini/bin），旧配置缺它时后端直连，表现为一直转圈 / 超时（Issue #159）
+        $hasAgy = @($targets | Where-Object { ([string]$_) -ieq "agy.exe" }).Count -gt 0
+        if ((Test-FileExists (Join-Path $BaseDir "Antigravity IDE.exe")) -and -not $hasAgy) {
+            Add-Finding -Level "Fail" -Code "TargetProcessesMissingAgy" `
+                -Message ("target_processes = [{0}] 缺少 agy.exe。" -f ($targets -join ", ")) `
+                -Hint "Antigravity IDE 2.6 起后端为 agy.exe，缺它后端不走代理。在 target_processes 中加入 `"agy.exe`" 后重启 IDE（IDE 插件状态栏可一键补齐）。"
+            Add-Verdict "target_processes 缺少 agy.exe：IDE 2.6 的后端不会走代理，请补齐后重启 IDE。"
         }
     }
 
@@ -910,7 +974,7 @@ function Test-ConfigContent {
     if ($config.fake_ip -and [bool]$config.fake_ip.enabled) {
         Add-Finding -Level "Info" -Code "FakeIpEnabled" `
             -Message ("FakeIP 已启用（{0}）。" -f $config.fake_ip.cidr) `
-            -Hint "若出现 198.18 段被拒绝的报错，可先关闭 FakeIP 验证。"
+            -Hint "应用报错里出现 198.18.x.x 被拒绝 / 超时，通常是连代理失败（端口或 proxy.type 不对，见上方检查），并非 FakeIP 本身的问题；代理确认正常后仍异常再尝试关闭 FakeIP。"
     }
 
     return $config
@@ -1210,7 +1274,21 @@ function Resolve-ProxySettings {
             -Message ("指定端口 {0} 当前不可达，本机在听的是 {1}。" -f $portValue, ($listening -join ", ")) `
             -Hint "确认代理软件端口设置，或改用探测到的端口。"
     }
-    if ([string]::IsNullOrWhiteSpace($typeValue)) { $typeValue = "socks5" }
+    # 按端口实际协议确定类型：未指定时采用探测结果（探测不出才默认 socks5）；已指定但与端口不符时告警
+    $detectedType = Test-ProxyProtocol -ComputerName $hostValue -Port $portValue
+    if ([string]::IsNullOrWhiteSpace($typeValue)) {
+        if ($detectedType) {
+            $typeValue = $detectedType
+            Add-Finding -Level "Info" -Code "ProxyTypeDetected" `
+                -Message ("探测到端口 {0} 的代理协议为 {1}。" -f $portValue, $detectedType)
+        } else {
+            $typeValue = "socks5"
+        }
+    } elseif ($detectedType -and (Get-NormalizedProxyType $typeValue) -ne $detectedType) {
+        Add-Finding -Level "Warn" -Code "ProxyTypeMismatch" `
+            -Message ("端口 {0} 实际是 {1} 代理，但代理类型设为 {2}。" -f $portValue, $detectedType, $typeValue) `
+            -Hint ("把 proxy.type 改为 {0}（已有 config.json 时加 -OverwriteConfig 重写，或在 IDE 插件 / config-web.html 中修改）。" -f $detectedType)
+    }
 
     # Existing：回传已有 proxy 对象，供 New-ProxyProfile 保留代理认证字段（username/password）
     $existingProxy = $null
