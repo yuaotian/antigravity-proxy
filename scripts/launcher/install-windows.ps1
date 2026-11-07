@@ -666,6 +666,18 @@ public static class AntigravityLauncher {
 # ============================================================================
 # 快捷方式与补丁同步模块
 # ============================================================================
+
+# 同步补丁时把目标目录已有 config.json 的代理字段合并进母本配置，避免用户配置被重置为默认值。
+# 除 host/port/type 外，同时保留代理认证字段 username/password（含 user/pass 别名，见 PR #144），
+# 否则每次自愈同步都会把用户填写的账密用母本空值覆盖掉。仅复制已存在的字段，避免写入 null 导致 DLL 解析失败。
+function Merge-ExistingProxySettings($SourceProxy, $ExistingProxy) {
+    foreach ($name in @("host", "port", "type", "username", "password", "user", "pass")) {
+        if ($ExistingProxy.PSObject.Properties.Name -contains $name) {
+            $SourceProxy | Add-Member -NotePropertyName $name -NotePropertyValue $ExistingProxy.$name -Force
+        }
+    }
+}
+
 function Sync-IdePatchFiles([string]$TargetAppDir) {
     if ([string]::IsNullOrWhiteSpace($TargetAppDir) -or -not (Test-Path -LiteralPath $TargetAppDir)) {
         Write-Err (T "ErrNoTargetDir")
@@ -700,9 +712,8 @@ function Sync-IdePatchFiles([string]$TargetAppDir) {
                         $existingJson = Get-Content -LiteralPath $dest -Raw -Encoding UTF8 | ConvertFrom-Json
                         $sourceJson = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
                         if ($existingJson.proxy -and $sourceJson.proxy) {
-                            $sourceJson.proxy.host = $existingJson.proxy.host
-                            $sourceJson.proxy.port = $existingJson.proxy.port
-                            $sourceJson.proxy.type = $existingJson.proxy.type
+                            # 合并用户已有代理字段（含账密），见 Merge-ExistingProxySettings
+                            Merge-ExistingProxySettings $sourceJson.proxy $existingJson.proxy
                             $sourceJson | ConvertTo-Json -Depth 10 | Out-File -FilePath $dest -Encoding UTF8
                             $copiedCount++
                             $needCopy = $false
@@ -751,9 +762,8 @@ function Sync-CliPatchFiles([string]$TargetAgyDir) {
                         $existingJson = Get-Content -LiteralPath $dest -Raw -Encoding UTF8 | ConvertFrom-Json
                         $sourceJson = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
                         if ($existingJson.proxy -and $sourceJson.proxy) {
-                            $sourceJson.proxy.host = $existingJson.proxy.host
-                            $sourceJson.proxy.port = $existingJson.proxy.port
-                            $sourceJson.proxy.type = $existingJson.proxy.type
+                            # 合并用户已有代理字段（含账密），见 Merge-ExistingProxySettings
+                            Merge-ExistingProxySettings $sourceJson.proxy $existingJson.proxy
                             $sourceJson | ConvertTo-Json -Depth 10 | Out-File -FilePath $dest -Encoding UTF8
                             $copiedCount++
                             $needCopy = $false

@@ -513,6 +513,15 @@ static std::string BuildIpInfoHttpRequest(bool viaHttpProxy) {
     }
     oss << " HTTP/1.1\r\n";
     oss << "Host: ipinfo.io\r\n";
+    // HTTP 代理走明文转发（非 CONNECT），配置了账密时需在本请求中直接携带 Proxy-Authorization，
+    // 否则开启认证的上游代理会返回 407，导致出口 IP 诊断误报失败（与 HttpConnectClient 保持一致）。
+    if (viaHttpProxy) {
+        const auto& proxy = Core::Config::Instance().proxy;
+        if (!proxy.username.empty() || !proxy.password.empty()) {
+            oss << "Proxy-Authorization: Basic "
+                << Network::HttpConnectClient::Base64Encode(proxy.username + ":" + proxy.password) << "\r\n";
+        }
+    }
     oss << "Connection: close\r\n";
     oss << "User-Agent: antigravity-proxy/1.8\r\n";
     oss << "\r\n";
@@ -2012,6 +2021,16 @@ static void DropConnectExContext(LPOVERLAPPED ovl) {
     g_connectExPending.erase(ovl);
 }
 
+// 连接代理服务器失败时的排障提示（Issue #154）：
+// 拒绝(10061)/超时(10060) 绝大多数是 proxy.port 与代理软件实际监听端口不一致或代理软件未启动；
+// 此时应用侧报错常显示为“连接 198.18.x.x(FakeIP) 被拒绝”，容易被误判为 FakeIP 故障，因此在日志中直接给出核对方向。
+static std::string BuildProxyConnectFailHint(int err) {
+    if (err != WSAECONNREFUSED && err != WSAETIMEDOUT) return "";
+    const auto& proxy = Core::Config::Instance().proxy;
+    return "（提示：请核对 config.json 中 proxy.host:proxy.port=" + proxy.host + ":" + std::to_string(proxy.port) +
+           " 是否与代理软件实际监听端口一致，并确认代理软件已启动）";
+}
+
 // ConnectEx 连接完成后更新上下文，避免 send 报 WSAENOTCONN
 static bool UpdateConnectExContext(SOCKET s) {
     if (setsockopt(s, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) != 0) {
@@ -2661,12 +2680,14 @@ int PerformProxyConnect(SOCKET s, const struct sockaddr* name, int namelen, bool
                 if (!Network::SocketIo::WaitConnect(s, config.timeout.connect_ms)) {
                     int waitErr = WSAGetLastError();
                     Core::Logger::Error("连接代理服务器失败, sock=" + std::to_string((unsigned long long)s) +
-                                        ", WSA错误码=" + std::to_string(waitErr));
+                                        ", WSA错误码=" + std::to_string(waitErr) +
+                                        BuildProxyConnectFailHint(waitErr));
                     return SOCKET_ERROR;
                 }
             } else {
                 Core::Logger::Error("连接代理服务器失败, sock=" + std::to_string((unsigned long long)s) +
-                                    ", WSA错误码=" + std::to_string(err));
+                                    ", WSA错误码=" + std::to_string(err) +
+                                    BuildProxyConnectFailHint(err));
                 return result;
             }
         }
@@ -3500,7 +3521,8 @@ BOOL PASCAL DetourConnectEx(
             return FALSE;
         }
         Core::Logger::Error("ConnectEx 连接代理服务器失败, sock=" + std::to_string((unsigned long long)s) +
-                            ", WSA错误码=" + std::to_string(err));
+                            ", WSA错误码=" + std::to_string(err) +
+                            BuildProxyConnectFailHint(err));
         WSASetLastError(err);
         return FALSE;
     }

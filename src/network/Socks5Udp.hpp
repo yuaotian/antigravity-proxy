@@ -99,12 +99,7 @@ namespace Network {
         inline bool NegotiateAuth(SOCKET tcpSock, const Core::ProxyConfig& config, int sendTimeoutMs, int recvTimeoutMs) {
             return Socks5Client::Authenticate(tcpSock, config, sendTimeoutMs, recvTimeoutMs, "SOCKS5 UDP");
         }
-
-        // 保持向后兼容的无认证版本
-        inline bool NegotiateNoAuth(SOCKET tcpSock, int sendTimeoutMs, int recvTimeoutMs) {
-            Core::ProxyConfig emptyConfig{};
-            return Socks5Client::Authenticate(tcpSock, emptyConfig, sendTimeoutMs, recvTimeoutMs, "SOCKS5 UDP");
-        }
+        // 说明：原 NegotiateNoAuth 已无调用方（UdpAssociate 统一走 NegotiateAuth，账密为空时等价 AUTH_NONE），按 YAGNI 移除。
 
         struct UdpAssociateResult {
             SOCKET controlSock = INVALID_SOCKET;  // TCP 控制连接（调用方负责保持打开）

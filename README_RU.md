@@ -766,6 +766,8 @@ target_link_libraries(version PRIVATE ws2_32)
 | `proxy.host` | string | `"127.0.0.1"` | Адрес прокси-сервера |
 | `proxy.port` | int | `7890` | Порт прокси-сервера |
 | `proxy.type` | string | `"socks5"` | Тип прокси: `socks5` или `http` (`https` принимается и обрабатывается как `http`) |
+| `proxy.username` | string | `""` | Имя пользователя для аутентификации прокси (необязательно; HTTP Basic и SOCKS5 RFC 1929) |
+| `proxy.password` | string | `""` | Пароль для аутентификации прокси (необязательно) |
 | `fake_ip.enabled` | bool | `true` | Включить систему FakeIP |
 | `fake_ip.cidr` | string | `"198.18.0.0/15"` | Диапазон адресов FakeIP (зарезервирован для тестирования) |
 | `timeout.connect` | int | `5000` | Тайм-аут подключения (мс) |

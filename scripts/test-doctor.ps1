@@ -313,6 +313,17 @@ Assert-Equal -Name "保留用户其它字段" -Expected "debug" -Actual $merged.
 Assert-True -Name "补齐缺失的 language_server" -Condition (
     (@($merged.target_processes | Where-Object { [string]$_ -match 'language_server' }).Count -gt 0))
 
+# 回归（PR #144 集成）：重写代理配置时必须保留用户已有的代理账密，无账密时不凭空写入字段
+Reset-State
+$existingProxy = [pscustomobject]@{ type = "http"; host = "127.0.0.1"; port = 7890; username = "alice"; password = "s3cret" }
+$withAuth = New-ProxyProfile -ProxyHostValue "127.0.0.1" -ProxyPortValue 7897 -ProxyTypeValue "socks5" -Base $null -ExistingProxy $existingProxy
+Assert-Equal -Name "保留代理用户名" -Expected "alice" -Actual $withAuth.proxy.username
+Assert-Equal -Name "保留代理密码" -Expected "s3cret" -Actual $withAuth.proxy.password
+Assert-Equal -Name "账密保留时端口仍被改写" -Expected 7897 -Actual $withAuth.proxy.port
+$noAuth = New-ProxyProfile -ProxyHostValue "127.0.0.1" -ProxyPortValue 7897 -ProxyTypeValue "socks5" -Base $null
+Assert-True -Name "无已有账密时不写入 username 字段" -Condition (
+    -not ($noAuth.proxy.PSObject.Properties.Name -contains "username"))
+
 Write-Host ""
 Write-Host "== 用例 9: CLI 目录识别 ==" -ForegroundColor White
 

@@ -272,6 +272,9 @@ Antigravity 更新后可能清理安装目录里的劫持文件；如果更新�
 
 #### 不想记目录？用 `doctor.ps1` 一键部署与修复
 
+> 💡 **入口分工**：日常部署与防更新覆盖请优先使用发布包根目录的 `setup.bat`（智能配置向导）；
+> `doctor.bat` / `doctor.ps1` 定位为**体检与排障修复工具**（判断补丁是否被删、是否真正被进程加载、端口是否可达），两者可并存使用。
+
 首次部署和"更新后失效"都可以交给脚本，不用手工找目录、比对架构或重配端口：
 
 ```powershell
@@ -892,7 +895,7 @@ target_link_libraries(version PRIVATE ws2_32)
 **提示**：
 - 端口留空代表“全部端口”；域名留空仅按 CIDR 匹配；域名填 `*` 将匹配所有域名。
 - 全量匹配可用 `0.0.0.0/0` 与 `::/0`。
-- 工具已支持 `proxy.host` / `proxy.port` / `proxy.type` 的编辑。
+- 工具已支持 `proxy.host` / `proxy.port` / `proxy.type` / `proxy.username` / `proxy.password` 的编辑。
 
 ### 已知问题 / Known Issues
 

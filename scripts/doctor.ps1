@@ -1026,7 +1026,9 @@ function New-ProxyProfile {
         [string]$ProxyHostValue,
         [int]$ProxyPortValue,
         [string]$ProxyTypeValue,
-        [AllowNull()]$Base
+        [AllowNull()]$Base,
+        # 安装目录内已有 config.json 的 proxy 对象；用于在重写配置时保留代理认证字段（PR #144）
+        [AllowNull()]$ExistingProxy = $null
     )
 
     # 以母本 config.json 为模板，只改写代理三要素，保留上游其它默认值。
@@ -1063,12 +1065,20 @@ function New-ProxyProfile {
     }
 
     $names = @($root.PSObject.Properties.Name)
-    $root | Add-Member -NotePropertyName "proxy" `
-        -NotePropertyValue ([pscustomobject]@{
-            type = $ProxyTypeValue
-            host = $ProxyHostValue
-            port = $ProxyPortValue
-        }) -Force
+    $proxyObj = [pscustomobject]@{
+        type = $ProxyTypeValue
+        host = $ProxyHostValue
+        port = $ProxyPortValue
+    }
+    # 保留用户已配置的代理认证字段（含 user/pass 别名），避免 -OverwriteConfig 重写配置时账密被清空。
+    if ($ExistingProxy) {
+        foreach ($authField in @("username", "password", "user", "pass")) {
+            if ($ExistingProxy.PSObject.Properties.Name -contains $authField) {
+                $proxyObj | Add-Member -NotePropertyName $authField -NotePropertyValue $ExistingProxy.$authField -Force
+            }
+        }
+    }
+    $root | Add-Member -NotePropertyName "proxy" -NotePropertyValue $proxyObj -Force
 
     if ($names -notcontains "target_processes") {
         $root | Add-Member -NotePropertyName "target_processes" -NotePropertyValue @(
@@ -1130,7 +1140,10 @@ function Resolve-ProxySettings {
     }
     if ([string]::IsNullOrWhiteSpace($typeValue)) { $typeValue = "socks5" }
 
-    return [pscustomobject]@{ Host = $hostValue; Port = $portValue; Type = $typeValue }
+    # Existing：回传已有 proxy 对象，供 New-ProxyProfile 保留代理认证字段（username/password）
+    $existingProxy = $null
+    if ($existing -and $existing.proxy) { $existingProxy = $existing.proxy }
+    return [pscustomobject]@{ Host = $hostValue; Port = $portValue; Type = $typeValue; Existing = $existingProxy }
 }
 
 function Invoke-Setup {
@@ -1149,7 +1162,7 @@ function Invoke-Setup {
     $proxy = Resolve-ProxySettings $BaseDir
     $template = Read-JsonFile (Join-Path $SrcDir "config.json")
     $profile = New-ProxyProfile -ProxyHostValue $proxy.Host -ProxyPortValue $proxy.Port `
-        -ProxyTypeValue $proxy.Type -Base $template
+        -ProxyTypeValue $proxy.Type -Base $template -ExistingProxy $proxy.Existing
 
     Write-Line ("目标目录 : {0}" -f $BaseDir) "White"
     Write-Line ("补丁母本 : {0}" -f $SrcDir) "White"

@@ -121,6 +121,7 @@ $localVersion = "未知 (<=2.2)"
 $proxyHost = "127.0.0.1"
 $proxyPort = 7890
 $proxyType = "socks5"
+$localProxyObj = $null  # 显式初始化，兼容 StrictMode，避免无本地配置时引用未定义变量
 $localConfigFile = Join-Path $PatchDir "config.json"
 
 if (Test-Path $localConfigFile) {
@@ -128,6 +129,8 @@ if (Test-Path $localConfigFile) {
         $cfgJson = Get-Content -LiteralPath $localConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($cfgJson._version) { $localVersion = $cfgJson._version }
         if ($cfgJson.proxy) {
+            # 记录原始 proxy 对象，升级时用于保留代理认证字段（username/password，见 PR #144）
+            $localProxyObj = $cfgJson.proxy
             if ($cfgJson.proxy.host) { $proxyHost = $cfgJson.proxy.host }
             if ($cfgJson.proxy.port) { $proxyPort = $cfgJson.proxy.port }
             if ($cfgJson.proxy.type) { $proxyType = $cfgJson.proxy.type }
@@ -278,6 +281,14 @@ if ((Test-Path $sourceConfigFile) -and $hasLocalConfig) {
             $newCfg.proxy.host = $proxyHost
             $newCfg.proxy.port = $proxyPort
             $newCfg.proxy.type = $proxyType
+            # 同时保留代理认证字段（含 user/pass 别名），避免升级后账密被新版母本的空值覆盖
+            if ($localProxyObj) {
+                foreach ($authField in @("username", "password", "user", "pass")) {
+                    if ($localProxyObj.PSObject.Properties.Name -contains $authField) {
+                        $newCfg.proxy | Add-Member -NotePropertyName $authField -NotePropertyValue $localProxyObj.$authField -Force
+                    }
+                }
+            }
         }
         $newCfg | ConvertTo-Json -Depth 10 | Out-File -FilePath $sourceConfigFile -Encoding UTF8
     } catch { }

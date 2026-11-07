@@ -265,6 +265,9 @@ Antigravity updates may clean injected files from the install directory. If prox
 
 #### Prefer not to hunt for folders? Use `doctor.ps1`
 
+> 💡 **Which entry to use**: for everyday deployment and update-overwrite protection, prefer `setup.bat` (setup wizard) in the release root;
+> `doctor.bat` / `doctor.ps1` is a **health-check & repair tool** (was the patch wiped, is it really loaded by the process, is the proxy port reachable). Both can be used side by side.
+
 Both first-time deployment and "it broke after an update" can be handled by one script,
 so you do not have to locate the install folder, compare PE architectures or reconfigure ports by hand:
 
@@ -803,6 +806,8 @@ Launch the target application, done! 🎉
 | `proxy.host` | string | `"127.0.0.1"` | Proxy server address |
 | `proxy.port` | int | `7890` | Proxy server port |
 | `proxy.type` | string | `"socks5"` | Proxy type: `socks5` or `http` (`https` is accepted and treated as `http`) |
+| `proxy.username` | string | `""` | Proxy auth username (optional; HTTP Basic and SOCKS5 RFC 1929) |
+| `proxy.password` | string | `""` | Proxy auth password (optional) |
 | `fake_ip.enabled` | bool | `true` | Enable FakeIP system |
 | `fake_ip.cidr` | string | `"198.18.0.0/15"` | FakeIP address range (benchmarking reserved) |
 | `timeout.connect` | int | `5000` | Connection timeout (ms) |
@@ -851,7 +856,7 @@ Routing rules live under `proxy_rules.routing`. They support CIDR, wildcard doma
 **Notes**:
 - Leave ports empty to match all ports. Leave domains empty to match CIDR only. `*` matches all domains.
 - Use `0.0.0.0/0` and `::/0` for full match.
-- The tool supports editing `proxy.host` / `proxy.port` / `proxy.type`.
+- The tool supports editing `proxy.host` / `proxy.port` / `proxy.type` / `proxy.username` / `proxy.password`.
 
 ### Known Issues
 

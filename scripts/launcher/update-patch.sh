@@ -96,12 +96,22 @@ if [[ -n "$DOWNLOAD_URL" ]]; then
     cp -f "$SRC_DIR/version.dll" "$PATCH_DIR/version.dll" 2>/dev/null || true
     if [[ -f "$SRC_DIR/config.json" ]]; then
         python3 -c "
-import json
+import json, os
 with open('$SRC_DIR/config.json', 'r', encoding='utf-8') as f:
     cfg = json.load(f)
 cfg.setdefault('proxy', {})['host'] = '$PROXY_HOST'
 cfg['proxy']['port'] = int('$PROXY_PORT')
 cfg['proxy']['type'] = '$PROXY_TYPE'
+# 保留本地已有的代理认证字段（username/password 及 user/pass 别名，见 PR #144），避免升级后账密丢失
+try:
+    if os.path.exists('$PATCH_DIR/config.json'):
+        with open('$PATCH_DIR/config.json', 'r', encoding='utf-8') as f:
+            old_proxy = json.load(f).get('proxy', {})
+        for k in ('username', 'password', 'user', 'pass'):
+            if k in old_proxy:
+                cfg['proxy'][k] = old_proxy[k]
+except Exception:
+    pass
 with open('$PATCH_DIR/config.json', 'w', encoding='utf-8') as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)
 "

@@ -561,6 +561,8 @@ Test-NetConnection -ComputerName 127.0.0.1 -Port 7890
 | proxy.host | 代理服务器地址 | 127.0.0.1 |
 | proxy.port | 代理服务器端口 | 7890 |
 | proxy.type | 代理类型 (socks5/http) | socks5 |
+| proxy.username | 代理认证用户名（可选，HTTP Basic / SOCKS5 RFC 1929） | 空 |
+| proxy.password | 代理认证密码（可选） | 空 |
 | fake_ip.enabled | 是否启用 FakeIP 系统 | true |
 | fake_ip.cidr | 虚拟 IP 地址范围 | 198.18.0.0/15 |
 | timeout.connect | 连接超时 (毫秒) | 5000 |
