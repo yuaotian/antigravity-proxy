@@ -44,14 +44,21 @@ int main() {
     assert(QuotePsSingle(L"a\x2019" L"b") == L"'a\x2019\x2019" L"b'");
 
     // 在线安装命令：只含单引号（可放进 -Command "..."），可选参数为空时不出现
-    const std::wstring basic = BuildOnlineInstallCommand(L"C:\\Program Files\\Antigravity IDE", L"", L"", L"Press Enter");
+    const std::wstring basic = BuildOnlineInstallCommand(L"C:\\Program Files\\Antigravity IDE", L"", L"", L"", L"Press Enter");
     assert(basic.find(L'"') == std::wstring::npos);
     assert(basic.find(L"-ExtensionOnly -InstallDir 'C:\\Program Files\\Antigravity IDE'") != std::wstring::npos);
     assert(basic.find(L"-ExtensionsDir") == std::wstring::npos);
     assert(basic.find(L"-UserDataDir") == std::wstring::npos);
+    assert(basic.find(L"-InjectedProxy") == std::wstring::npos);
     assert(basic.find(OnlineScriptUrl()) != std::wstring::npos);
     assert(basic.size() > 13 && basic.substr(basic.size() - 13) == L"'Press Enter'");
-    const std::wstring custom = BuildOnlineInstallCommand(L"D:\\IDE", L"D:\\ext dir", L"D:\\ud", L"x");
-    assert(custom.find(L" -ExtensionsDir 'D:\\ext dir' -UserDataDir 'D:\\ud' }") != std::wstring::npos);
+    const std::wstring custom = BuildOnlineInstallCommand(L"D:\\IDE", L"D:\\ext dir", L"D:\\ud", L"socks5://127.0.0.1:7890", L"x");
+    assert(custom.find(L" -ExtensionsDir 'D:\\ext dir' -UserDataDir 'D:\\ud' -InjectedProxy 'socks5://127.0.0.1:7890' }") !=
+           std::wstring::npos);
+
+    // 代理地址展示：IPv6 加方括号，已带方括号不重复
+    assert(FormatProxyAddress(L"socks5", L"127.0.0.1", 7890) == L"socks5://127.0.0.1:7890");
+    assert(FormatProxyAddress(L"http", L"::1", 8080) == L"http://[::1]:8080");
+    assert(FormatProxyAddress(L"http", L"[::1]", 8080) == L"http://[::1]:8080");
     return 0;
 }

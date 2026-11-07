@@ -41,7 +41,7 @@ Antigravity-Proxy — это патч прокси (DLL), который нач�
 [Net.ServicePointManager]::SecurityProtocol=3072; & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('https://wget.la/https://raw.githubusercontent.com/yuaotian/antigravity-proxy/main/scripts/install-online.ps1')))
 ```
 
-Скрипт сам определит установленные продукты и скачает нужную версию (если прямое подключение к GitHub не удаётся, переключится на зеркало; SHA256 проверяется), развернёт патч и `config.json`, а для Antigravity IDE заодно установит расширение. Существующий `config.json` не перезаписывается.
+Скрипт сам определит установленные продукты, скачает нужную версию с проверкой SHA256, развернёт патч и `config.json`, а для Antigravity IDE заодно установит расширение. Существующий `config.json` не перезаписывается. Порядок загрузки: локальный прокси (переменная окружения или системный прокси, только если порт доступен) → зеркала → напрямую GitHub, до 3 попыток на каждый источник.
 
 Параметры добавляйте в конец команды, например `... install-online.ps1'))) -Product ide`:
 

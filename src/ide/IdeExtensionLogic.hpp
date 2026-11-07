@@ -119,18 +119,27 @@ inline std::wstring QuotePsSingle(const std::wstring& s) {
 }
 
 // 只装插件的在线安装命令（PowerShell 5.1 起可用，在可见终端中执行）：
-// 下载安装脚本 → 以脚本块调用 -ExtensionOnly；extensionsDir / userDataDir 非空时透传，装到当前 IDE 实例实际使用的位置。
+// 下载安装脚本 → 以脚本块调用 -ExtensionOnly；extensionsDir / userDataDir 非空时透传，装到当前 IDE 实例实际使用的位置；
+// injectedProxy 非空表示窗口进程已注入代理补丁（DLL 已确认 config.json 中的代理可连），脚本据此把“经该代理直连 GitHub”排在最前。
 // 全程只用单引号，外层可直接放进 -Command "..."；try/catch 保证出错时窗口仍停留在 closePrompt，便于用户看到原因
 inline std::wstring BuildOnlineInstallCommand(const std::wstring& installDir, const std::wstring& extensionsDir,
-                                              const std::wstring& userDataDir, const std::wstring& closePrompt) {
+                                              const std::wstring& userDataDir, const std::wstring& injectedProxy,
+                                              const std::wstring& closePrompt) {
     std::wstring cmd = L"try { [Net.ServicePointManager]::SecurityProtocol=3072; "
                        L"& ([scriptblock]::Create((New-Object Net.WebClient).DownloadString(";
     cmd += QuotePsSingle(OnlineScriptUrl());
     cmd += L"))) -ExtensionOnly -InstallDir " + QuotePsSingle(installDir);
     if (!extensionsDir.empty()) cmd += L" -ExtensionsDir " + QuotePsSingle(extensionsDir);
     if (!userDataDir.empty()) cmd += L" -UserDataDir " + QuotePsSingle(userDataDir);
+    if (!injectedProxy.empty()) cmd += L" -InjectedProxy " + QuotePsSingle(injectedProxy);
     cmd += L" } catch { Write-Host $_ -ForegroundColor Red }; Read-Host " + QuotePsSingle(closePrompt);
     return cmd;
+}
+
+// 代理地址的展示形式（日志、确认框、脚本参数）：type://host:port，IPv6 地址加方括号
+inline std::wstring FormatProxyAddress(const std::wstring& type, const std::wstring& host, int port) {
+    const bool ipv6 = host.find(L':') != std::wstring::npos && !host.empty() && host.front() != L'[';
+    return type + L"://" + (ipv6 ? L"[" + host + L"]" : host) + L":" + std::to_wstring(port);
 }
 
 }  // namespace IdeExtension

@@ -4790,6 +4790,21 @@ int WSAAPI DetourWSASendTo(
 // ============= Hook 管理 =============
 
 namespace Hooks {
+    // config.json 中的代理当前能否建立 TCP 连接（复用 ConnectTcpToProxyServer：多候选地址 + connect 超时）。
+    // 供插件在线安装窗口决定“先走本地代理”还是“直接走镜像 / 直连”
+    bool IsProxyReachable() {
+        const auto& proxy = Core::Config::Instance().proxy;
+        if (proxy.port <= 0 || proxy.host.empty()) return false;
+        // WSAStartup 有引用计数，调用方线程未必已初始化 Winsock，这里成对调用保证可用
+        WSADATA wsa{};
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
+        SOCKET s = ConnectTcpToProxyServer(proxy);
+        const bool ok = s != INVALID_SOCKET;
+        if (ok) CloseSocketCompat(s);
+        WSACleanup();
+        return ok;
+    }
+
     void Install(bool enableNetworkHooks) {
         if (MH_Initialize() != MH_OK) {
             Core::Logger::Error("MinHook 初始化失败");

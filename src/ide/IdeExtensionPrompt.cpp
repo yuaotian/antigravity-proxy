@@ -9,6 +9,7 @@
 //   实测运行中的 IDE 会自动加载新安装的插件，无需重启；插件随即接管首次引导（检测/扫描代理）；
 // - 只装了 DLL（同目录无 VSIX）：点击通知后弹确认框展示将执行的完整命令，用户同意后在可见的 PowerShell 窗口中运行
 //   在线安装脚本 install-online.ps1 -ExtensionOnly（只装插件，不动 DLL 与配置；系统自带的 Windows PowerShell 5.1 即可）。
+//   下载优先级：config.json 中的代理（可连时注入本 DLL）→ 镜像 → 直连；代理不可连时脚本自行尝试本机代理 → 镜像 → 直连。
 
 #include "ide/IdeExtensionPrompt.hpp"
 
@@ -22,10 +23,16 @@
 #include <string>
 #include <vector>
 
+#include "core/Config.hpp"
 #include "core/DllIdentity.hpp"
 #include "core/Logger.hpp"
 #include "ide/IdeExtensionLogic.hpp"
 #include "injection/ProcessInjector.hpp"
+
+// 定义在 hooks/Hooks.cpp：config.json 中的代理当前能否建立 TCP 连接
+namespace Hooks {
+    bool IsProxyReachable();
+}
 
 namespace IdeExtension {
 namespace {
@@ -348,20 +355,25 @@ std::wstring NotifyText(UiLang lang, bool local) {
     }
 }
 
-std::wstring ConfirmOnlineText(UiLang lang, const std::wstring& command) {
+// proxyAddr 非空：config.json 中的代理可连，下载经该代理；为空：代理不可用，脚本自行尝试本地代理 → 镜像 → 直连
+std::wstring ConfirmOnlineText(UiLang lang, const std::wstring& command, const std::wstring& proxyAddr) {
     switch (lang) {
     case UiLang::Zh:
         return L"将打开一个 PowerShell 窗口，在线安装 Antigravity Proxy 配套插件：\n\n"
-               L"• 安装脚本经 wget.la 镜像获取；插件安装包从 GitHub Release 下载（直连失败自动换镜像），并做 SHA256 校验\n"
-               L"• 下载流量与 IDE 一样走 config.json 中的代理\n"
+               L"• 安装脚本经 wget.la 镜像获取；插件安装包从 GitHub Release 下载，并做 SHA256 校验\n" +
+               (proxyAddr.empty()
+                    ? std::wstring(L"• config.json 中的代理当前无法连接：下载依次尝试本机代理、镜像、直连（每个最多 3 次，单次超时 60 秒）\n")
+                    : L"• 下载与 IDE 一样经代理 " + proxyAddr + L"，失败时改走镜像（每个最多 3 次，单次超时 60 秒）\n") +
                L"• 只安装插件，不修改 version.dll 与 config.json\n"
                L"• 运行中的 IDE 会自动加载插件，无需重启\n\n"
                L"将执行的命令：\n" + command + L"\n\n是否继续？（选择「否」后本版本不再提示）";
     case UiLang::Ru:
         return L"Откроется окно PowerShell для онлайн-установки расширения Antigravity Proxy:\n\n"
-               L"• скрипт установки загружается через зеркало wget.la; пакет расширения — из GitHub Release "
-               L"(при сбое прямого соединения — через зеркала) с проверкой SHA256\n"
-               L"• загрузка идёт через прокси из config.json, как и у IDE\n"
+               L"• скрипт установки загружается через зеркало wget.la; пакет расширения — из GitHub Release с проверкой SHA256\n" +
+               (proxyAddr.empty()
+                    ? std::wstring(L"• прокси из config.json сейчас недоступен: по очереди пробуются локальный прокси, зеркала, прямое подключение "
+                                   L"(до 3 попыток, тайм-аут 60 с)\n")
+                    : L"• загрузка идёт через прокси " + proxyAddr + L", как и у IDE; при сбое — через зеркала (до 3 попыток, тайм-аут 60 с)\n") +
                L"• устанавливается только расширение, version.dll и config.json не изменяются\n"
                L"• запущенная IDE загрузит расширение автоматически, без перезапуска\n\n"
                L"Будет выполнена команда:\n" + command +
@@ -369,8 +381,12 @@ std::wstring ConfirmOnlineText(UiLang lang, const std::wstring& command) {
     default:
         return L"A PowerShell window will open to install the Antigravity Proxy companion extension online:\n\n"
                L"• The install script is fetched via the wget.la mirror; the extension package is downloaded from GitHub Release "
-               L"(falling back to mirrors) and verified with SHA256\n"
-               L"• Downloads go through the proxy in config.json, same as the IDE\n"
+               L"and verified with SHA256\n" +
+               (proxyAddr.empty()
+                    ? std::wstring(L"• The proxy in config.json is not reachable right now: tries a local proxy, then mirrors, then a direct "
+                                   L"connection (up to 3 attempts each, 60 s timeout)\n")
+                    : L"• Downloads go through proxy " + proxyAddr + L", same as the IDE, falling back to mirrors "
+                      L"(up to 3 attempts each, 60 s timeout)\n") +
                L"• Only the extension is installed; version.dll and config.json are not modified\n"
                L"• A running IDE loads the extension automatically, no restart needed\n\n"
                L"Command to run:\n" + command + L"\n\nContinue? (If you choose \"No\", you won't be asked again for this version.)";
@@ -492,9 +508,10 @@ void InstallFromLocalVsix(const Payload& p, const std::wstring& extDir, bool cus
 }
 
 // 在可见的 PowerShell 窗口中执行命令。固定使用系统自带的 Windows PowerShell 5.1（Win10/11 内置），不依赖 PowerShell 7。
-// 只装了 DLL 的用户多数没开系统代理，powershell.exe 又不在注入目标内：实测直连 GitHub 超时、镜像不代理 API 请求，安装必然失败。
-// 因此挂起创建后主动注入本 DLL，让下载流量与 IDE 一样走 config.json 中的代理（SOCKS5 / HTTP 均可），再恢复运行
-DWORD LaunchVisiblePowerShell(const std::wstring& workDir, const std::wstring& psCommand, PROCESS_INFORMATION* pi) {
+// inject=true（config.json 中的代理已确认可连）：挂起创建后主动注入本 DLL，下载与 IDE 一样走该代理（SOCKS5 / HTTP 均可）。
+// 原因：只装了 DLL 的用户多数没开系统代理，powershell.exe 又不在注入目标内，实测直连 GitHub 超时。
+// 代理不可连时不注入：否则窗口内所有连接都会被转发到不可用的代理，镜像与直连也一并失败
+DWORD LaunchVisiblePowerShell(const std::wstring& workDir, const std::wstring& psCommand, bool inject, PROCESS_INFORMATION* pi) {
     wchar_t sys[MAX_PATH] = {0};
     const UINT n = GetSystemDirectoryW(sys, MAX_PATH);
     if (n == 0 || n >= MAX_PATH) return ERROR_PATH_NOT_FOUND;
@@ -514,32 +531,43 @@ DWORD LaunchVisiblePowerShell(const std::wstring& workDir, const std::wstring& p
                         env.empty() ? nullptr : env.data(), workDir.c_str(), &si, pi)) {
         return GetLastError();
     }
-    // 调用方已要求挂起的进程，CreateProcess Hook 不做注入（见 DetourCreateProcessW），这里自行注入；
-    // 注入失败不阻断：照常运行，下载退回直连 / 系统代理
-    std::string reason;
-    const std::wstring dllPath = Injection::ProcessInjector::GetCurrentDllPath();
-    if (!dllPath.empty() && Injection::ProcessInjector::InjectDll(pi->hProcess, dllPath, &reason)) {
-        Core::Logger::Info("在线安装窗口已注入代理补丁，下载走 config.json 中的代理");
-    } else {
-        Core::Logger::Warn("在线安装窗口注入代理补丁失败（" + (reason.empty() ? std::string("DLL 路径未知") : reason) +
-                           "），下载将直连或走系统代理");
+    if (inject) {
+        // 调用方已要求挂起的进程，CreateProcess Hook 不做注入（见 DetourCreateProcessW），这里自行注入；
+        // 注入失败不阻断：照常运行，脚本会依次改走镜像
+        std::string reason;
+        const std::wstring dllPath = Injection::ProcessInjector::GetCurrentDllPath();
+        if (!dllPath.empty() && Injection::ProcessInjector::InjectDll(pi->hProcess, dllPath, &reason)) {
+            Core::Logger::Info("在线安装窗口已注入代理补丁，下载走 config.json 中的代理");
+        } else {
+            Core::Logger::Warn("在线安装窗口注入代理补丁失败（" + (reason.empty() ? std::string("DLL 路径未知") : reason) +
+                               "），下载将改走镜像");
+        }
     }
     ResumeThread(pi->hThread);
     return ERROR_SUCCESS;
 }
 
-// 只装了 DLL：确认后在可见终端运行在线安装脚本（只装插件），并在窗口关闭后记录结果
+// 只装了 DLL：确认后在可见终端运行在线安装脚本（只装插件），并在窗口关闭后记录结果。
+// 下载优先级：config.json 中的代理（可连时注入）→ 镜像 → 直连；代理不可连时由脚本自行探测本机代理 → 镜像 → 直连
 void InstallOnline(const Payload& p, const std::wstring& extDir, bool customExtDir, UiLang lang) {
+    const auto& proxy = Core::Config::Instance().proxy;
+    const bool proxyOk = Hooks::IsProxyReachable();
+    const std::wstring proxyAddr = proxyOk ? FormatProxyAddress(Utf8ToWide(proxy.type), Utf8ToWide(proxy.host), proxy.port) : L"";
+    Core::Logger::Info(proxyOk ? "在线安装：config.json 中的代理可连（" + WideToUtf8(proxyAddr) + "），下载将优先经该代理"
+                               : "在线安装：config.json 中的代理当前无法连接（" + proxy.host + ":" + std::to_string(proxy.port) +
+                                 "），下载将依次尝试本机代理、镜像、直连");
+
     const std::wstring command = BuildOnlineInstallCommand(p.exeDir, customExtDir ? extDir : L"",
-                                                           GetArgValue(p.cmdLine, L"--user-data-dir"), ClosePromptText(lang));
-    if (ShowMessage(ConfirmOnlineText(lang, command), MB_YESNO | MB_ICONQUESTION) != IDYES) {
+                                                           GetArgValue(p.cmdLine, L"--user-data-dir"), proxyAddr,
+                                                           ClosePromptText(lang));
+    if (ShowMessage(ConfirmOnlineText(lang, command, proxyAddr), MB_YESNO | MB_ICONQUESTION) != IDYES) {
         Core::Logger::Info("用户取消在线安装 IDE 配套插件（本版本不再提示）");
         return;
     }
     Core::Logger::Info("用户确认在线安装 IDE 配套插件，打开 PowerShell 窗口执行：" + WideToUtf8(command));
 
     PROCESS_INFORMATION pi{};
-    const DWORD err = LaunchVisiblePowerShell(p.exeDir, command, &pi);
+    const DWORD err = LaunchVisiblePowerShell(p.exeDir, command, proxyOk, &pi);
     if (err != ERROR_SUCCESS) {
         Core::Logger::Warn("在线安装窗口启动失败, err=" + std::to_string(err));
         ShowMessage(LaunchFailText(lang, err, command), MB_OK | MB_ICONWARNING);

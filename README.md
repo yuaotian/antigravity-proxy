@@ -41,7 +41,7 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 [Net.ServicePointManager]::SecurityProtocol=3072; & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('https://wget.la/https://raw.githubusercontent.com/yuaotian/antigravity-proxy/main/scripts/install-online.ps1')))
 ```
 
-脚本会自动检测已安装的产品，下载对应版本（GitHub 直连失败时自动换镜像，并做 SHA256 校验），部署补丁和 `config.json`，Antigravity IDE 会同时安装配套插件。已有的 `config.json` 不会被覆盖。
+脚本会自动检测已安装的产品，下载对应版本并做 SHA256 校验，部署补丁和 `config.json`，Antigravity IDE 会同时安装配套插件。已有的 `config.json` 不会被覆盖。下载顺序：本机代理（环境变量或系统代理，端口可连才用）→ 镜像 → 直连 GitHub，每个下载源最多重试 3 次。
 
 需要指定参数时加在命令末尾，例如 `... install-online.ps1'))) -Product ide`：
 

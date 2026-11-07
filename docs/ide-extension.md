@@ -166,10 +166,16 @@ StatusModel = { patch, configStatus, proxy, reach, pendingRestart }
   `install-online.ps1 -ExtensionOnly`（与 README 一键命令同源，经 wget.la 获取脚本；只装插件，不动 DLL 与配置；透传扩展目录与用户数据目录）。
   命令全程只用单引号（`IdeExtensionLogic.hpp` 的 `BuildOnlineInstallCommand`），包在 `try/catch` 里，结尾 `Read-Host` 等待回车，
   出错时窗口不会一闪而过。
-- 在线安装窗口**以挂起方式创建后主动注入本 DLL**，下载流量与 IDE 一样走 `config.json` 中的代理（SOCKS5 / HTTP 均可）。
-  原因：只装了 DLL 的用户多数没开系统代理，powershell.exe 又不在注入目标内；实测直连 GitHub 超时，镜像不代理
-  `api.github.com`（获取最新版本号），不注入时安装必然失败。挂起创建的进程不经 CreateProcess Hook 处理，注入失败不阻断。
-- 日志：通知已显示 / 已收起 / 已点击 / 已忽略、确认或取消、执行的命令、窗口进程号、注入结果、窗口如何结束（退出码）与最终是否装上，均写入 `proxy-*.log`。
+- 在线安装前先用 `Hooks::IsProxyReachable()` 检测 `config.json` 中的代理能否建立 TCP 连接：
+  - **可连**：窗口以挂起方式创建后主动注入本 DLL，下载流量与 IDE 一样走该代理（SOCKS5 / HTTP 均可），并传 `-InjectedProxy`，
+    脚本按 GitHub（经代理）→ 镜像（经代理）的顺序下载。原因：只装了 DLL 的用户多数没开系统代理，powershell.exe 又不在注入目标内，
+    实测不注入时直连 GitHub 超时；挂起创建的进程不经 CreateProcess Hook 处理，注入失败不阻断。
+  - **不可连**：不注入（否则窗口内所有连接都会被转到不可用的代理），脚本自行按 本机代理（环境变量 / 系统代理，端口可连才用）→ 镜像 → 直连 下载。
+  - 确认框按两种情况分别说明下载方式。
+- 日志：通知已显示 / 已收起 / 已点击 / 已忽略、代理是否可连、确认或取消、执行的命令、窗口进程号、注入结果、窗口如何结束（退出码）与最终是否装上，均写入 `proxy-*.log`。
+- 在线安装脚本的下载重试：每个请求超时 60 秒，每个下载源最多 3 次（超时、断流、5xx/429、内容校验不符会重试；4xx 表示该源不支持此地址，直接换源），
+  全部失败输出汇总后结束。实测 wget.la 偶发中途断流并返回截断内容，因此按 `Content-Length` 核对长度，截断按传输失败重试。
+  证书始终校验：下载的是可执行补丁与安装包，跳过校验后中间人可同时替换安装包与 SHA256 清单。
 - 实测：运行中的 IDE 会自动加载 CLI 刚安装的插件，**无需重启**，因此成功时不再弹窗，由插件的首次引导接管。
 - 纯逻辑（主进程判定、参数解析、product.json、extensions.json、PowerShell 单引号转义与在线安装命令）在 `IdeExtensionLogic.hpp`，
   由 `tests/test_ide_extension.cpp` 覆盖。

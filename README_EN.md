@@ -41,7 +41,7 @@ Paste and run in PowerShell:
 [Net.ServicePointManager]::SecurityProtocol=3072; & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('https://wget.la/https://raw.githubusercontent.com/yuaotian/antigravity-proxy/main/scripts/install-online.ps1')))
 ```
 
-The script detects installed products, downloads the matching version (switches to a mirror if GitHub cannot be reached, and verifies SHA256), and deploys the patch and `config.json`. For Antigravity IDE it also installs the companion extension. An existing `config.json` is not overwritten.
+The script detects installed products, downloads the matching version and verifies SHA256, and deploys the patch and `config.json`. For Antigravity IDE it also installs the companion extension. An existing `config.json` is not overwritten. Download order: local proxy (environment variable or system proxy, used only if its port is reachable) → mirrors → direct GitHub, with up to 3 attempts per source.
 
 To pass parameters, add them at the end of the command, e.g. `... install-online.ps1'))) -Product ide`:
 

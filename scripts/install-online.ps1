@@ -12,12 +12,13 @@
 
     流程：
       1. 检测 Antigravity IDE（Antigravity IDE.exe）、Antigravity（Antigravity.exe）、Antigravity CLI（agy.exe）
-      2. 获取版本（默认最新，GitHub API 直连失败时依次走镜像）
-      3. 下载对应架构的发布包：直连 GitHub 与镜像依次尝试；有 SHA256SUMS.txt 时校验，取不到清单只告警不阻断
+      2. 获取版本（默认最新）
+      3. 下载对应架构的发布包；有 SHA256SUMS.txt 时校验，取不到清单只告警不阻断
       4. 解压到 %LOCALAPPDATA%\antigravity-proxy\<版本>\（安装目录之外，日后 IDE 更新冲掉补丁时可据此修复）
       5. 调用 doctor.ps1 -Action Setup 部署补丁与 config.json（已有 config.json 不覆盖；IDE 会同时安装配套插件）
 
-    下载优先使用环境变量 HTTPS_PROXY / HTTP_PROXY / ALL_PROXY（http 代理），否则使用系统代理。
+    下载顺序：本地代理（环境变量 HTTPS_PROXY / HTTP_PROXY / ALL_PROXY 或系统代理，且端口可连）→ 镜像 → 直连 GitHub；
+    未检测到可用代理时为 镜像 → 直连。每个请求超时 60 秒，每个下载源最多尝试 3 次，全部失败才结束并提示。
 
 .PARAMETER Version
     指定版本（如 2.5 或 v2.5.1），默认安装最新版本。
@@ -41,6 +42,10 @@
 
 .PARAMETER ExtensionsDir / UserDataDir
     透传给 IDE 命令行的 --extensions-dir / --user-data-dir（便携版或多配置用户）。
+
+.PARAMETER InjectedProxy
+    内部参数：由 DLL 启动本脚本、且已把代理补丁注入当前 PowerShell 进程时传入（值为 config.json 中的代理地址，仅用于显示）。
+    此时所有流量都经该代理，下载顺序为 GitHub（经代理）→ 镜像（经代理），不再探测其它本地代理。
 #>
 [CmdletBinding()]
 param(
@@ -52,7 +57,8 @@ param(
     [switch]$Yes,
     [switch]$ExtensionOnly,
     [string]$ExtensionsDir = "",
-    [string]$UserDataDir = ""
+    [string]$UserDataDir = "",
+    [string]$InjectedProxy = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,10 +69,9 @@ $script:ExitCode = 0
 
 $script:Repo = "yuaotian/antigravity-proxy"
 $script:Root = Join-Path $env:LOCALAPPDATA "antigravity-proxy"
-# 下载源："" 表示直连 GitHub，其余为 GitHub 代理站（与 DLL 更新检查 updates.mirrors 默认值一致）；
-# 成功的源会被提到最前，后续下载优先复用
-$script:Sources = @(
-    "",
+# GitHub 代理站（镜像），与 DLL 更新检查 updates.mirrors 默认值一致；路线顺序见 Get-Routes。
+# 实测（2026-11）：wget.la 可转发 api.github.com 与 Release 下载；fastgit.cc / boki / ednovas 只能下载 Release
+$script:Mirrors = @(
     "https://wget.la/",
     "https://rapidgit.jjda.de5.net/",
     "https://fastgit.cc/",
@@ -75,6 +80,8 @@ $script:Sources = @(
     "https://github.ednovas.xyz/"
 )
 $script:WebProxy = $null
+$script:WebProxyLabel = ""
+$script:PreferredRoute = ""
 $script:ReleaseAssets = @()
 
 # ---------------------------------------------------------------------------
@@ -90,7 +97,16 @@ foreach ($cultureName in @([Globalization.CultureInfo]::CurrentUICulture.Name, [
 
 $script:Msg = @{
     Title           = @("Antigravity Proxy 在线安装", "Antigravity Proxy online installer", "Онлайн-установка Antigravity Proxy")
-    ProxyEnv        = @("下载使用环境变量代理：{0}", "Downloading via proxy from environment: {0}", "Загрузка через прокси из переменных окружения: {0}")
+    SystemProxy     = @("系统代理", "system proxy", "системный прокси")
+    ProxyUse        = @("下载优先使用本地代理：{0}（来自 {1}）", "Downloading via local proxy first: {0} (from {1})", "Загрузка сначала через локальный прокси: {0} (из {1})")
+    ProxyDown       = @("  本地代理 {0}（来自 {1}）端口无法连接，跳过", "  Local proxy {0} (from {1}) is not reachable, skipped", "  Локальный прокси {0} (из {1}) недоступен, пропущен")
+    ProxyNone       = @("未检测到可用的本地 HTTP 代理，依次使用镜像与直连。", "No reachable local HTTP proxy; using mirrors, then direct connection.", "Доступный локальный HTTP-прокси не найден; используются зеркала, затем прямое подключение.")
+    ProxyInjected   = @("下载经代理补丁转发到 {0}（与 IDE 相同），失败时改走镜像。", "Downloads go through the proxy patch to {0} (same as the IDE); mirrors are used if that fails.", "Загрузка идёт через патч на прокси {0} (как у IDE); при сбое используются зеркала.")
+    ViaProxy        = @("代理 {0}", "proxy {0}", "прокси {0}")
+    Direct          = @("直连 github.com", "direct github.com", "напрямую github.com")
+    AllRoutesFailed = @("所有下载源均失败（共 {0} 个，每个最多尝试 {1} 次）。请检查网络：开启代理软件（或其「系统代理」）后重新运行。",
+                        "All download sources failed ({0} sources, up to {1} attempts each). Check your network: start your proxy app (or its system proxy) and run again.",
+                        "Все источники загрузки недоступны ({0} шт., до {1} попыток каждый). Проверьте сеть: запустите прокси-клиент (или его системный прокси) и повторите.")
     Detecting       = @("检测已安装的产品...", "Detecting installed products...", "Поиск установленных продуктов...")
     NoneFound       = @("未检测到 Antigravity IDE / Antigravity / Antigravity CLI。可用 -InstallDir 指定安装目录（与主程序同级）。",
                         "No Antigravity IDE / Antigravity / Antigravity CLI found. Use -InstallDir to specify the install folder (next to the main executable).",
@@ -114,7 +130,8 @@ $script:Msg = @{
                         "SHA256SUMS.txt unavailable (older release or network issue); skipping integrity check.",
                         "SHA256SUMS.txt недоступен (старый релиз или проблема сети); проверка целостности пропущена.")
     Downloading     = @("下载 {0}", "Downloading {0}", "Загрузка {0}")
-    SourceFailed    = @("  {0} 不可用：{1}", "  {0} failed: {1}", "  {0} недоступен: {1}")
+    SourceFailed    = @("  {0} 第 {1}/{2} 次失败：{3}", "  {0} attempt {1}/{2} failed: {3}", "  {0}: попытка {1}/{2} не удалась: {3}")
+    Truncated       = @("下载不完整（收到 {0} 字节，应为 {1} 字节）", "incomplete download ({0} of {1} bytes)", "загрузка неполная ({0} из {1} байт)")
     NotZip          = @("返回内容不是 zip", "response is not a zip file", "ответ не является zip-архивом")
     HashMismatch    = @("SHA256 与校验清单不一致", "SHA256 does not match the checksum list", "SHA256 не совпадает со списком контрольных сумм")
     Verified        = @("  已下载并通过 SHA256 校验（来源：{0}）", "  Downloaded and SHA256 verified (from {0})", "  Загружено, SHA256 проверен (источник: {0})")
@@ -159,21 +176,83 @@ function Write-Dim([string]$Text) { Write-Host $Text -ForegroundColor DarkGray }
 # 下载
 # ---------------------------------------------------------------------------
 
-# WebRequest 不读 HTTPS_PROXY 等环境变量（PS 5.1），只开了“端口代理”没开系统代理的用户会直连失败，这里显式接上；
-# SOCKS 代理 WebRequest 不支持，跳过后回落到系统代理
+# 每个请求的超时（建连 + 响应头、读写各自计时）与每个下载源的最大尝试次数
+$script:RequestTimeoutMs = 60000
+$script:MaxAttemptsPerSource = 3
+
+# 本地代理探测：环境变量 HTTPS_PROXY / HTTP_PROXY / ALL_PROXY（http 代理）> 系统代理（ProxyEnable=1）；
+# 只有端口在 3 秒内能建立 TCP 连接才认为可用，避免配置了却没启动的代理把每个请求都拖到超时。
+# 说明：WebRequest 不读环境变量（PS 5.1），也不支持 SOCKS 代理，SOCKS 地址会被跳过。
+function Test-TcpPort([string]$HostName, [int]$Port) {
+    $client = New-Object Net.Sockets.TcpClient
+    try {
+        $iar = $client.BeginConnect($HostName, $Port, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne(3000)) { return $false }
+        $client.EndConnect($iar)
+        return $true
+    } catch {
+        return $false
+    } finally {
+        $client.Close()
+    }
+}
+
 function Initialize-WebProxy {
+    # 已注入代理补丁：进程内所有连接都由 DLL 转发到 config.json 中的代理，WebRequest 不能再叠加其它代理
+    if (-not [string]::IsNullOrWhiteSpace($InjectedProxy)) {
+        $script:WebProxyLabel = (T "ViaProxy") -f $InjectedProxy
+        Write-Dim ((T "ProxyInjected") -f $InjectedProxy)
+        return
+    }
+    $candidates = @()
     foreach ($name in @("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY")) {
         $value = [Environment]::GetEnvironmentVariable($name)
         if ([string]::IsNullOrWhiteSpace($value)) { continue }
         $value = $value.Trim()
         if ($value -notmatch '^[a-zA-Z][a-zA-Z0-9+.-]*://') { $value = "http://$value" }
-        if ($value -notmatch '^https?://') { continue }
+        if ($value -match '^https?://') { $candidates += [pscustomobject]@{ Url = $value; From = $name } }
+    }
+    try {
+        $ie = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction Stop
+        if ($ie.ProxyEnable -eq 1 -and -not [string]::IsNullOrWhiteSpace($ie.ProxyServer)) {
+            # ProxyServer 可能是 "host:port" 或 "http=host:port;https=host:port;socks=..."，取 https / http 项
+            $server = [string]$ie.ProxyServer
+            if ($server -match '=') {
+                $map = @{}
+                foreach ($part in $server -split ';') { if ($part -match '^\s*(\w+)=(.+?)\s*$') { $map[$Matches[1].ToLowerInvariant()] = $Matches[2] } }
+                $server = if ($map["https"]) { $map["https"] } elseif ($map["http"]) { $map["http"] } else { "" }
+            }
+            if ($server) {
+                if ($server -notmatch '^[a-zA-Z][a-zA-Z0-9+.-]*://') { $server = "http://$server" }
+                $candidates += [pscustomobject]@{ Url = $server; From = (T "SystemProxy") }
+            }
+        }
+    } catch { }
+
+    foreach ($c in $candidates) {
         try {
-            $script:WebProxy = New-Object Net.WebProxy($value, $true)
-            Write-Dim ((T "ProxyEnv") -f $value)
+            $uri = [Uri]$c.Url
+            if (-not (Test-TcpPort $uri.Host $uri.Port)) {
+                Write-Dim ((T "ProxyDown") -f $c.Url, $c.From)
+                continue
+            }
+            $script:WebProxy = New-Object Net.WebProxy($c.Url, $true)
+            $script:WebProxyLabel = (T "ViaProxy") -f $uri.Authority
+            Write-Dim ((T "ProxyUse") -f $c.Url, $c.From)
             return
         } catch { }
     }
+    # 自动配置脚本（PAC）无法预先探测端口，交给系统按脚本选择代理
+    try {
+        $ie = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction Stop
+        if (-not [string]::IsNullOrWhiteSpace([string]$ie.AutoConfigURL)) {
+            $script:WebProxy = [Net.WebRequest]::GetSystemWebProxy()
+            $script:WebProxyLabel = (T "ViaProxy") -f "PAC"
+            Write-Dim ((T "ProxyUse") -f $ie.AutoConfigURL, (T "SystemProxy"))
+            return
+        }
+    } catch { }
+    Write-Dim (T "ProxyNone")
 }
 
 function Get-InnerMessage($ErrorRecord) {
@@ -182,46 +261,79 @@ function Get-InnerMessage($ErrorRecord) {
     return $e.Message
 }
 
-# 读取整个响应为字节数组；Timeout 控制建连与响应头，ReadWriteTimeout 防止慢速源无限拖住
-function Get-WebBytes([string]$Url, [int]$TimeoutSec) {
+# 读取整个响应为字节数组。Proxy 为 $null 表示不走代理（镜像 / 直连），避免系统代理设置干扰。
+# 实测镜像（wget.la）偶发在传输中途断开，却不报错、按“正常结束”返回截断的内容；
+# 服务器给出 Content-Length 时核对长度，不符按传输失败处理（可重试），避免把截断包误报为“校验不一致”而直接换源
+function Get-WebBytes([string]$Url, $Proxy) {
     $req = [Net.WebRequest]::Create($Url)
-    $req.Timeout = $TimeoutSec * 1000
-    $req.ReadWriteTimeout = 30000
+    $req.Timeout = $script:RequestTimeoutMs
+    $req.ReadWriteTimeout = $script:RequestTimeoutMs
     $req.UserAgent = "antigravity-proxy-online-installer"
-    if ($script:WebProxy) { $req.Proxy = $script:WebProxy }
+    $req.Proxy = $Proxy
     $resp = $req.GetResponse()
     try {
         $ms = New-Object IO.MemoryStream
         $resp.GetResponseStream().CopyTo($ms)
-        return , $ms.ToArray()
+        $bytes = $ms.ToArray()
+        if ($resp.ContentLength -gt 0 -and $bytes.Length -ne $resp.ContentLength) {
+            throw ((T "Truncated") -f $bytes.Length, $resp.ContentLength)
+        }
+        return , $bytes
     } finally {
         $resp.Close()
     }
 }
 
-function Get-SourceLabel([string]$Source) {
-    if ([string]::IsNullOrEmpty($Source)) { return "github.com" }
-    return ([Uri]$Source).Host
+# 下载路线（按优先级）：本地代理直连 GitHub → 各镜像 → 直连 GitHub。
+# 已注入代理补丁时：GitHub（经代理）→ 镜像（经代理）；“直连”与第一条相同，省略。
+# 证书始终校验：下载的是可执行补丁与安装包，跳过校验后中间人可同时替换安装包和 SHA256 清单
+function Get-Routes {
+    $routes = @()
+    $injected = -not [string]::IsNullOrWhiteSpace($InjectedProxy)
+    if ($injected) {
+        $routes += [pscustomobject]@{ Prefix = ""; Proxy = $null; Label = $script:WebProxyLabel }
+    } elseif ($script:WebProxy) {
+        $routes += [pscustomobject]@{ Prefix = ""; Proxy = $script:WebProxy; Label = $script:WebProxyLabel }
+    }
+    foreach ($m in $script:Mirrors) { $routes += [pscustomobject]@{ Prefix = $m; Proxy = $null; Label = ([Uri]$m).Host } }
+    if (-not $injected) { $routes += [pscustomobject]@{ Prefix = ""; Proxy = $null; Label = (T "Direct") } }
+    return $routes
 }
 
-# 依次尝试各下载源（直连 + 镜像）。Validate 返回非空字符串表示内容不合格（如镜像返回了错误页），继续换源；
-# 全部失败返回 $null，由调用方决定是否阻断
-function Invoke-Sources([string]$Target, [int]$TimeoutSec, [scriptblock]$Validate, $State = $null) {
-    foreach ($source in @($script:Sources)) {
-        $label = Get-SourceLabel $source
-        try {
-            $bytes = Get-WebBytes ($source + $Target) $TimeoutSec
-            $problem = & $Validate $bytes $State
-            if ($problem) {
-                Write-Dim ((T "SourceFailed") -f $label, $problem)
-                continue
+# 依次尝试各路线，每条路线最多 MaxAttemptsPerSource 次（超时、断流、5xx、内容不合格都会重试；
+# 4xx 说明该源不支持此地址，直接换源）。Validate 返回非空字符串表示内容不合格（错误页 / 哈希不符，
+# 镜像断流截断也会表现为哈希不符）。成功的路线提到最前，后续下载优先复用；全部失败时输出汇总并返回 $null
+function Invoke-Sources([string]$Target, [scriptblock]$Validate, $State = $null) {
+    $routes = Get-Routes
+    if ($script:PreferredRoute) {
+        $routes = @($routes | Where-Object { $_.Label -eq $script:PreferredRoute }) + @($routes | Where-Object { $_.Label -ne $script:PreferredRoute })
+    }
+    foreach ($route in $routes) {
+        for ($attempt = 1; $attempt -le $script:MaxAttemptsPerSource; $attempt++) {
+            try {
+                $bytes = Get-WebBytes ($route.Prefix + $Target) $route.Proxy
+                $problem = & $Validate $bytes $State
+                if ($problem) {
+                    Write-Dim ((T "SourceFailed") -f $route.Label, $attempt, $script:MaxAttemptsPerSource, $problem)
+                    if ($attempt -lt $script:MaxAttemptsPerSource) { Start-Sleep -Seconds 2 }
+                    continue
+                }
+                $script:PreferredRoute = $route.Label
+                return [pscustomobject]@{ Bytes = $bytes; Source = $route.Label }
+            } catch {
+                $msg = Get-InnerMessage $_
+                Write-Dim ((T "SourceFailed") -f $route.Label, $attempt, $script:MaxAttemptsPerSource, $msg)
+                # HTTP 4xx（如镜像不支持该地址返回 404/403）重试同一源不会变好，直接换源；超时、截断与 5xx/429 等才重试
+                $status = 0
+                for ($e = $_.Exception; $e; $e = $e.InnerException) {
+                    if ($e -is [Net.WebException] -and $e.Response) { $status = [int]$e.Response.StatusCode; break }
+                }
+                if ($status -ge 400 -and $status -lt 500 -and $status -ne 429) { break }
+                if ($attempt -lt $script:MaxAttemptsPerSource) { Start-Sleep -Seconds 2 }
             }
-            $script:Sources = @($source) + @($script:Sources | Where-Object { $_ -ne $source })
-            return [pscustomobject]@{ Bytes = $bytes; Source = $label }
-        } catch {
-            Write-Dim ((T "SourceFailed") -f $label, (Get-InnerMessage $_))
         }
     }
+    Write-Err ((T "AllRoutesFailed") -f @($routes).Count, $script:MaxAttemptsPerSource)
     return $null
 }
 
@@ -241,7 +353,7 @@ function Resolve-ReleaseTag {
         return "v$v"
     }
     Write-Info (T "ResolvingTag")
-    $result = Invoke-Sources -Target "https://api.github.com/repos/$($script:Repo)/releases/latest" -TimeoutSec 8 -Validate {
+    $result = Invoke-Sources -Target "https://api.github.com/repos/$($script:Repo)/releases/latest" -Validate {
         param($b)
         try {
             $json = [Text.Encoding]::UTF8.GetString($b) | ConvertFrom-Json
@@ -265,7 +377,7 @@ function Get-ReleaseChecksums([string]$Tag) {
         Write-Warn (T "SumsMissing")
         return $null
     }
-    $result = Invoke-Sources -Target "https://github.com/$($script:Repo)/releases/download/$Tag/SHA256SUMS.txt" -TimeoutSec 8 -Validate {
+    $result = Invoke-Sources -Target "https://github.com/$($script:Repo)/releases/download/$Tag/SHA256SUMS.txt" -Validate {
         param($b)
         if ([Text.Encoding]::ASCII.GetString($b) -match '(?m)^[0-9a-fA-F]{64}\s') { return "" }
         return "not a checksum list"
@@ -286,7 +398,7 @@ function Get-ReleaseChecksums([string]$Tag) {
 function Get-VerifiedAsset([string]$Tag, [string]$Asset, $Checksums) {
     $expected = if ($Checksums) { $Checksums[$Asset] } else { $null }
     Write-Info ((T "Downloading") -f $Asset)
-    $result = Invoke-Sources -Target "https://github.com/$($script:Repo)/releases/download/$Tag/$Asset" -TimeoutSec 20 -State $expected -Validate {
+    $result = Invoke-Sources -Target "https://github.com/$($script:Repo)/releases/download/$Tag/$Asset" -State $expected -Validate {
         param($b, $hash)
         if ($b.Length -lt 4 -or $b[0] -ne 0x50 -or $b[1] -ne 0x4B) { return (T "NotZip") }
         if ($hash -and (Get-Sha256Hex $b) -ne $hash) { return (T "HashMismatch") }
@@ -325,7 +437,7 @@ function Install-ReleasePackage([string]$Tag, [string]$Variant, [string]$Arch, $
     $doctor = Join-Path $pkgDir "doctor.ps1"
     if (-not (Test-Path -LiteralPath $doctor -PathType Leaf)) {
         Write-Dim (T "DoctorFallback")
-        $raw = Invoke-Sources -Target "https://raw.githubusercontent.com/$($script:Repo)/main/scripts/doctor.ps1" -TimeoutSec 15 -Validate {
+        $raw = Invoke-Sources -Target "https://raw.githubusercontent.com/$($script:Repo)/main/scripts/doctor.ps1" -Validate {
             param($b)
             if ([Text.Encoding]::UTF8.GetString($b) -match 'function Invoke-Setup') { return "" }
             return "not doctor.ps1"
