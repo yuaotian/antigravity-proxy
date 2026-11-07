@@ -4,7 +4,8 @@
  * Antigravity Proxy 配置面板（Webview 前端）
  *
  * 结构：Schema 驱动渲染 → 编辑时增量更新（校验/修改标记/保存态），不整页重绘以保持焦点；
- * 纯逻辑（默认值/规范化/导出/校验）全部来自共享模块 AGPConfigCore，与独立配置页一致。
+ * 纯逻辑（默认值/规范化/导出/校验）全部来自共享模块 AGPConfigCore，与独立配置页一致；
+ * 界面文案来自共享词条 AGPI18n（简体中文 / English / Русский），语言由宿主下发。
  * 状态：loading（骨架屏）→ ready | empty（无配置文件）| error（读取/解析失败）。
  */
 (function () {
@@ -14,8 +15,23 @@
   const vscode = acquireVsCodeApi();
   /** @type {any} */
   const Core = /** @type {any} */ (window).AGPConfigCore;
+  /** @type {any} */
+  const I18n = /** @type {any} */ (window).AGPI18n;
   const app = /** @type {HTMLElement} */ (document.getElementById("app"));
   const ICON_SRC = app.dataset.icon || "";
+
+  // 当前界面语言与翻译函数（首帧取 data-lang，之后以宿主 init/lang 消息为准）
+  let LANG = app.dataset.lang || "zh-cn";
+  /** @type {(key: string, params?: Record<string, any>) => string} */
+  let T = I18n ? I18n.createT(LANG) : (k) => k;
+  /** @param {string} lang */
+  const setLang = (lang) => {
+    if (!lang || !I18n) return;
+    LANG = lang;
+    T = I18n.createT(lang);
+    document.documentElement.lang = I18n.HTML_LANG[lang] || "en";
+    SECTIONS = buildSections();
+  };
 
   // ============================================================
   // 工具
@@ -55,80 +71,83 @@
   const post = (/** @type {any} */ msg) => vscode.postMessage(msg);
 
   // ============================================================
-  // Schema：分区与设置项（标题/说明/控件类型），驱动渲染与错误定位
+  // Schema：分区与设置项（标题/说明/控件类型），驱动渲染与错误定位；随语言重建
   // ============================================================
-  const opt = (/** @type {string} */ v, /** @type {string} */ label) => ({ v, label });
-  const SECTIONS = [
+  /** 下拉选项：值保持配置原文，说明随语言翻译 */
+  const opt = (/** @type {string} */ v, /** @type {string} */ key) => ({ v, label: `${v} — ${T(key)}` });
+  const buildSections = () => [
     {
-      id: "proxy", title: "代理", icon: "globe",
+      id: "proxy", title: T("sec.proxy"), icon: "globe",
       rows: [
-        { path: "proxy.type", title: "类型", kind: "segmented", options: [opt("socks5", "SOCKS5"), opt("http", "HTTP")], desc: "本地代理软件提供的协议；Clash / Mihomo 的混合端口两种都支持。" },
-        { path: "proxy.host", title: "地址", kind: "text", width: "w-m", placeholder: "127.0.0.1", desc: "代理软件监听的地址，本机通常为 127.0.0.1。" },
-        { path: "proxy.port", title: "端口", kind: "port", desc: "代理软件监听的端口；0 表示禁用代理（全部直连）。", presets: [[7890, "Clash"], [7897, "Clash Verge"], [10808, "v2rayN"], [1080, "SOCKS"]] },
-        { id: "proxy.auth", title: "认证", kind: "group", desc: "仅当上游代理开启账号认证时填写（SOCKS5 RFC 1929 / HTTP Basic）。", fields: [
-          { path: "proxy.username", label: "用户名", kind: "text", width: "w-s", placeholder: "可选" },
-          { path: "proxy.password", label: "密码", kind: "password", width: "w-s", placeholder: "可选" },
+        { path: "proxy.type", title: T("row.proxyType"), kind: "segmented", options: [{ v: "socks5", label: "SOCKS5" }, { v: "http", label: "HTTP" }], desc: T("row.proxyTypeDesc") },
+        { path: "proxy.host", title: T("row.proxyHost"), kind: "text", width: "w-m", placeholder: "127.0.0.1", desc: T("row.proxyHostDesc") },
+        { path: "proxy.port", title: T("row.proxyPort"), kind: "port", desc: T("row.proxyPortDesc"), presets: [[7890, "Clash"], [7897, "Clash Verge"], [10808, "v2rayN"], [1080, "SOCKS"]] },
+        { id: "proxy.auth", title: T("row.proxyAuth"), kind: "group", desc: T("row.proxyAuthDesc"), fields: [
+          { path: "proxy.username", label: T("row.username"), kind: "text", width: "w-s", placeholder: T("common.optional") },
+          { path: "proxy.password", label: T("row.password"), kind: "password", width: "w-s", placeholder: T("common.optional") },
         ] },
-        { id: "probe", title: "连通测试", kind: "probe", desc: "使用当前填写的设置（无需先保存）建立到 www.gstatic.com:443 的隧道，验证端口、协议与认证。" },
+        { id: "probe", title: T("row.probe"), kind: "probe", desc: T("row.probeDesc") },
+        { id: "scan", title: T("row.scan"), kind: "scan", desc: T("row.scanDesc") },
       ],
     },
     {
-      id: "network", title: "网络策略", icon: "shield",
+      id: "network", title: T("sec.network"), icon: "shield",
       rows: [
-        { path: "proxy_rules.allowed_ports", title: "代理端口白名单", kind: "tags", itemKind: "port", placeholder: "输入端口后回车，如 443", desc: "只有发往这些目标端口的连接走代理，其余直连。" },
-        { path: "proxy_rules.dns_mode", title: "DNS 解析", kind: "select", options: [opt("direct", "direct — 本机解析"), opt("proxy", "proxy — 交给代理解析")], desc: "域名由本机解析，或交给代理解析。" },
-        { path: "proxy_rules.ipv6_mode", title: "IPv6 连接", kind: "select", options: [opt("proxy", "proxy — 走代理"), opt("direct", "direct — 直连"), opt("block", "block — 阻断")], desc: "发往 IPv6 地址的连接如何处理。" },
-        { path: "proxy_rules.udp_mode", title: "UDP / QUIC", kind: "select", options: [opt("auto", "auto — SOCKS5 时代理，否则按回退"), opt("proxy", "proxy — SOCKS5 UDP 代理"), opt("direct", "direct — 直连"), opt("block", "block — 阻断（回落 TCP）")], desc: "UDP 流量（含 QUIC/HTTP3）的处理方式。" },
-        { path: "proxy_rules.udp_fallback", title: "UDP 回退", kind: "select", options: [opt("block", "block — 阻断"), opt("direct", "direct — 直连")], desc: "UDP 无法经代理转发时的处理方式（udp_mode 为 auto / proxy 时生效）。" },
-        { path: "fake_ip.enabled", title: "FakeIP", kind: "check", label: "启用 FakeIP", desc: "为域名分配虚拟 IP，连接时还原域名交给代理，避免本地 DNS 污染。" },
-        { path: "fake_ip.cidr", title: "FakeIP 地址池", kind: "text", width: "w-m", placeholder: "198.18.0.0/15", desc: "虚拟 IP 所用的 IPv4 网段，需避开真实网络。" },
+        { path: "proxy_rules.allowed_ports", title: T("row.allowedPorts"), kind: "tags", itemKind: "port", placeholder: T("row.allowedPortsPh"), desc: T("row.allowedPortsDesc") },
+        { path: "proxy_rules.dns_mode", title: T("row.dnsMode"), kind: "select", options: [opt("direct", "opt.localResolve"), opt("proxy", "opt.proxyResolve")], desc: T("row.dnsModeDesc") },
+        { path: "proxy_rules.ipv6_mode", title: T("row.ipv6Mode"), kind: "select", options: [opt("proxy", "opt.viaProxy"), opt("direct", "opt.direct"), opt("block", "opt.block")], desc: T("row.ipv6ModeDesc") },
+        { path: "proxy_rules.udp_mode", title: T("row.udpMode"), kind: "select", options: [opt("auto", "opt.udpAuto"), opt("proxy", "opt.udpProxy"), opt("direct", "opt.direct"), opt("block", "opt.udpBlock")], desc: T("row.udpModeDesc") },
+        { path: "proxy_rules.udp_fallback", title: T("row.udpFallback"), kind: "select", options: [opt("block", "opt.block"), opt("direct", "opt.direct")], desc: T("row.udpFallbackDesc") },
+        { path: "fake_ip.enabled", title: T("row.fakeIp"), kind: "check", label: T("row.fakeIpLabel"), desc: T("row.fakeIpDesc") },
+        { path: "fake_ip.cidr", title: T("row.fakeIpCidr"), kind: "text", width: "w-m", placeholder: "198.18.0.0/15", desc: T("row.fakeIpCidrDesc") },
       ],
     },
     {
-      id: "routing", title: "路由规则", icon: "list-tree",
+      id: "routing", title: T("sec.routing"), icon: "list-tree",
       rows: [
-        { path: "proxy_rules.routing.enabled", title: "路由", kind: "check", label: "启用路由规则", desc: "按规则决定每条连接走代理还是直连。" },
-        { path: "proxy_rules.routing.default_action", title: "默认动作", kind: "select", options: [opt("proxy", "proxy — 走代理"), opt("direct", "direct — 直连")], desc: "未命中任何规则时的处理方式。" },
-        { path: "proxy_rules.routing.priority_mode", title: "匹配顺序", kind: "select", options: [opt("order", "order — 按列表顺序"), opt("number", "number — 按优先级数值")], desc: "多条规则同时命中时如何取舍。" },
-        { path: "proxy_rules.routing.use_default_private", title: "内网直连", kind: "check", label: "局域网与保留地址始终直连", desc: "自动将回环、局域网等私有网段视为直连。" },
-        { path: "proxy_rules.routing.rules", title: "规则列表", kind: "rules", desc: "按域名、IP 段与端口匹配连接。" },
+        { path: "proxy_rules.routing.enabled", title: T("row.routing"), kind: "check", label: T("row.routingLabel"), desc: T("row.routingDesc") },
+        { path: "proxy_rules.routing.default_action", title: T("row.defaultAction"), kind: "select", options: [opt("proxy", "opt.viaProxy"), opt("direct", "opt.direct")], desc: T("row.defaultActionDesc") },
+        { path: "proxy_rules.routing.priority_mode", title: T("row.priorityMode"), kind: "select", options: [opt("order", "opt.orderList"), opt("number", "opt.orderNumber")], desc: T("row.priorityModeDesc") },
+        { path: "proxy_rules.routing.use_default_private", title: T("row.privateDirect"), kind: "check", label: T("row.privateDirectLabel"), desc: T("row.privateDirectDesc") },
+        { path: "proxy_rules.routing.rules", title: T("row.rules"), kind: "rules", desc: T("row.rulesDesc") },
       ],
     },
     {
-      id: "injection", title: "进程注入", icon: "symbol-event",
+      id: "injection", title: T("sec.injection"), icon: "symbol-event",
       rows: [
-        { path: "child_injection", title: "子进程注入", kind: "check", label: "注入 IDE 启动的子进程", desc: "让后端进程（IDE 2.6+ 为 agy.exe）也走代理；关闭后通常无法登录或对话。" },
-        { path: "child_injection_mode", title: "注入范围", kind: "select", options: [opt("filtered", "filtered — 仅目标进程"), opt("inherit", "inherit — 全部子进程")], desc: "filtered 只注入下方目标进程；inherit 注入全部子进程（排除列表除外）。" },
-        { path: "target_processes", title: "目标进程", kind: "tags", itemKind: "text", placeholder: "进程名，如 agy.exe", desc: "支持不带 .exe 的名称片段匹配。" },
-        { path: "child_injection_exclude", title: "排除进程", kind: "tags", itemKind: "text", placeholder: "永不注入的进程名", desc: "优先级高于目标进程列表。" },
+        { path: "child_injection", title: T("row.childInjection"), kind: "check", label: T("row.childInjectionLabel"), desc: T("row.childInjectionDesc") },
+        { path: "child_injection_mode", title: T("row.injectionMode"), kind: "select", options: [opt("filtered", "opt.injectFiltered"), opt("inherit", "opt.injectInherit")], desc: T("row.injectionModeDesc") },
+        { path: "target_processes", title: T("row.targetProcesses"), kind: "tags", itemKind: "text", placeholder: T("row.targetProcessesPh"), desc: T("row.targetProcessesDesc") },
+        { path: "child_injection_exclude", title: T("row.excludeProcesses"), kind: "tags", itemKind: "text", placeholder: T("row.excludeProcessesPh"), desc: T("row.excludeProcessesDesc") },
       ],
     },
     {
-      id: "advanced", title: "高级", icon: "tools",
+      id: "advanced", title: T("sec.advanced"), icon: "tools",
       rows: [
-        { path: "log_level", title: "日志级别", kind: "select", options: [opt("debug", "debug — 调试"), opt("info", "info — 信息"), opt("warn", "warn — 警告"), opt("error", "error — 错误")], desc: "DLL 日志（安装目录 logs\\）的详细程度，排障时可临时改为 debug。" },
-        { id: "timeout", title: "超时", kind: "group", desc: "连接代理、发送与接收的超时时间（毫秒）。", fields: [
-          { path: "timeout.connect", label: "连接", kind: "number", width: "w-s" },
-          { path: "timeout.send", label: "发送", kind: "number", width: "w-s" },
-          { path: "timeout.recv", label: "接收", kind: "number", width: "w-s" },
+        { path: "log_level", title: T("row.logLevel"), kind: "select", options: [opt("debug", "opt.logDebug"), opt("info", "opt.logInfo"), opt("warn", "opt.logWarn"), opt("error", "opt.logError")], desc: T("row.logLevelDesc") },
+        { id: "timeout", title: T("row.timeout"), kind: "group", desc: T("row.timeoutDesc"), fields: [
+          { path: "timeout.connect", label: T("row.timeoutConnect"), kind: "number", width: "w-s" },
+          { path: "timeout.send", label: T("row.timeoutSend"), kind: "number", width: "w-s" },
+          { path: "timeout.recv", label: T("row.timeoutRecv"), kind: "number", width: "w-s" },
         ] },
-        { path: "traffic_logging", title: "流量日志", kind: "check", label: "记录每条连接的收发统计", desc: "会显著增加日志量，仅排障时开启。" },
-        { path: "diagnostics.agent_ip_probe", title: "出口 IP 诊断", kind: "check", label: "启动时探测代理出口 IP 与地区", desc: "用于排查 “User location is not supported”。" },
-        { path: "updates.enabled", title: "更新检查", kind: "check", label: "后台检查 DLL 新版本", desc: "发现新版本时提示；不会自动替换文件。" },
-        { id: "updates.timing", title: "更新检查时机", kind: "group", desc: "启动后延迟与请求超时（毫秒）。", fields: [
-          { path: "updates.check_delay_ms", label: "延迟", kind: "number", width: "w-s" },
-          { path: "updates.timeout_ms", label: "超时", kind: "number", width: "w-s" },
+        { path: "traffic_logging", title: T("row.trafficLogging"), kind: "check", label: T("row.trafficLoggingLabel"), desc: T("row.trafficLoggingDesc") },
+        { path: "diagnostics.agent_ip_probe", title: T("row.ipProbe"), kind: "check", label: T("row.ipProbeLabel"), desc: T("row.ipProbeDesc") },
+        { path: "updates.enabled", title: T("row.updates"), kind: "check", label: T("row.updatesLabel"), desc: T("row.updatesDesc") },
+        { id: "updates.timing", title: T("row.updatesTiming"), kind: "group", desc: T("row.updatesTimingDesc"), fields: [
+          { path: "updates.check_delay_ms", label: T("row.updatesDelay"), kind: "number", width: "w-s" },
+          { path: "updates.timeout_ms", label: T("row.updatesTimeout"), kind: "number", width: "w-s" },
         ] },
-        { id: "updates.flags", title: "更新提示", kind: "group", desc: "", fields: [
-          { path: "updates.notify_once", label: "同一版本只提示一次", kind: "check" },
-          { path: "updates.allow_insecure_mirrors", label: "允许证书不受信任的镜像", kind: "check" },
+        { id: "updates.flags", title: T("row.updatesFlags"), kind: "group", desc: "", fields: [
+          { path: "updates.notify_once", label: T("row.notifyOnce"), kind: "check" },
+          { path: "updates.allow_insecure_mirrors", label: T("row.insecureMirrors"), kind: "check" },
         ] },
-        { path: "updates.mirrors", title: "下载镜像", kind: "tags", itemKind: "text", placeholder: "https://…", desc: "GitHub 加速镜像，必须为 https。" },
+        { path: "updates.mirrors", title: T("row.mirrors"), kind: "tags", itemKind: "text", placeholder: "https://…", desc: T("row.mirrorsDesc") },
       ],
     },
   ];
+  let SECTIONS = buildSections();
 
-  // 路径 → 行 id（错误/修改标记定位用）
+  // 路径 → 行 id（错误/修改标记定位用；路径与语言无关，构建一次即可）
   /** @type {Map<string, string>} */
   const ROW_OF_PATH = new Map();
   for (const s of SECTIONS) {
@@ -162,13 +181,16 @@
     /** @type {Record<string, string>} */ errors: {},
     /** @type {Record<string, string>} */ warnings: {},
     /** @type {{ status: string, result?: any }} */ probe: { status: "idle" },
+    /** @type {{ status: "idle" | "running" | "done", result?: any, applied?: boolean }} */ scan: { status: "idle" },
+    onboarding: false,
+    attention: false,
     saving: false,
     drawer: !!persisted.drawer,
     drawerMode: persisted.drawerMode || "changes",
     showSecret: false,
     /** @type {Set<string>} */ expandedRules: new Set(),
     activeSection: "proxy",
-    /** @type {null | { kind: string, text: string }} */ banner: null,
+    /** @type {null | { kind: string, key: string, params?: Record<string, any> }} */ banner: null,
   };
   const persist = () => vscode.setState({ drawer: S.drawer, drawerMode: S.drawerMode });
 
@@ -189,9 +211,16 @@
     const m = e.data || {};
     switch (m.type) {
       case "init": return onInit(m);
+      case "lang":
+        setLang(m.lang);
+        render();
+        // 连通测试结果由宿主按旧语言生成，切换语言后重新测试一次以统一语言
+        if (S.phase === "ready" && S.probe.status !== "idle" && S.form.proxy.port > 0) runProbe();
+        return;
       case "meta": S.meta = m.meta; return renderStatusband();
       case "saved": return onSaved(m);
       case "probeResult": S.probe = { status: m.result.ok ? "ok" : "fail", result: m.result }; renderProbe(); renderStatusband(); return;
+      case "scanResult": return onScanResult(m.result);
       case "imported": return onImported(m.raw);
       case "toast": return toast(m.kind, m.text);
       default: return;
@@ -200,6 +229,7 @@
 
   /** @param {any} m */
   function onInit(m) {
+    setLang(m.lang);
     S.meta = m.meta;
     S.readStatus = m.read.status;
     S.readError = m.read.error || "";
@@ -212,8 +242,19 @@
     } else {
       S.phase = m.read.status === "missing" ? "empty" : "error";
     }
+    // 首次引导 / 扫描命令：显示引导说明并自动扫描本机代理
+    const wantScan = S.phase === "ready" && (m.intent === "onboarding" || m.intent === "scan");
+    if (wantScan) {
+      S.onboarding = m.intent === "onboarding";
+      S.attention = S.onboarding;
+      S.activeSection = "proxy";
+    }
     render();
     if (S.phase === "ready" && S.form.proxy.port > 0 && S.probe.status === "idle") runProbe();
+    if (wantScan) {
+      scrollToSection("proxy");
+      runScan();
+    }
   }
 
   /** @param {any} m */
@@ -223,9 +264,14 @@
       S.baseRaw = exportCurrent();
       S.saved = clone(S.form);
       if (m.meta) S.meta = m.meta;
-      S.banner = { kind: "info", text: "已保存。代理 DLL 在进程启动时读取配置，重启 IDE 后生效。" };
+      S.banner = { kind: "info", key: "ui.savedBanner" };
+      // 保存成功即完成引导：撤下引导说明与高亮
+      S.onboarding = false;
+      setAttention(false);
+      R.btnSave?.classList.remove("attention");
+      R.onboard?.remove();
     } else {
-      S.banner = { kind: "error", text: `保存失败：${m.error}` };
+      S.banner = { kind: "error", key: "ui.saveFailed", params: { error: m.error } };
     }
     refreshAll();
     renderStatusband();
@@ -241,7 +287,7 @@
     S.form = Core.normalizeForm(raw, raw?._version);
     S.phase = "ready";
     render();
-    toast("info", "已导入到编辑区，确认无误后点击“保存”写入 config.json");
+    toast("info", T("ui.imported"));
   }
 
   // ============================================================
@@ -264,7 +310,7 @@
   function renderSkeleton() {
     // 不使用 style 属性：Webview CSP（style-src 仅允许插件资源）会拦截内联样式
     const row = () => h("div", { class: "sk-row" }, h("div", { class: "sk short" }), h("div", { class: "sk line" }), h("div", { class: "sk input" }));
-    return h("div", { class: "skeleton", "aria-busy": "true", "aria-label": "正在加载配置" },
+    return h("div", { class: "skeleton", "aria-busy": "true", "aria-label": T("ui.loading") },
       h("div", { class: "sk title" }), row(), row(), row(), row());
   }
 
@@ -277,11 +323,11 @@
         h("span", { class: "path mono", title: S.meta?.configPath || "", text: S.meta?.configPath || "" })));
     if (!ready) return h("header", { class: "topbar" }, brand, h("div", { class: "actions" }, renderMenu(false)));
 
-    R.dirty = h("span", { class: "dirty-badge", hidden: true }, h("span", { class: "dot" }), "未保存");
+    R.dirty = h("span", { class: "dirty-badge", hidden: true }, h("span", { class: "dot" }), T("ui.unsaved"));
     R.errCount = h("button", { class: "error-count", hidden: true, on: { click: jumpToFirstError } });
-    R.btnRevert = h("button", { class: "btn secondary", on: { click: revert }, title: "放弃未保存的修改" }, icon("discard"), "还原");
-    R.btnSave = h("button", { class: "btn primary", on: { click: save }, title: "保存到 config.json（Ctrl+S）" }, icon("save"), "保存");
-    R.btnJson = h("button", { class: "icon-btn", "aria-pressed": String(S.drawer), title: "JSON 预览与变更（Ctrl+J）", "aria-label": "JSON 预览与变更", on: { click: toggleDrawer } }, icon("json"));
+    R.btnRevert = h("button", { class: "btn secondary", on: { click: revert }, title: T("ui.revertTitle") }, icon("discard"), T("ui.revert"));
+    R.btnSave = h("button", { class: "btn primary", on: { click: save }, title: T("ui.saveTitle") }, icon("save"), T("ui.save"));
+    R.btnJson = h("button", { class: "icon-btn", "aria-pressed": String(S.drawer), title: T("ui.jsonTitle"), "aria-label": T("ui.jsonAria"), on: { click: toggleDrawer } }, icon("json"));
     return h("header", { class: "topbar" }, brand,
       h("div", { class: "actions" }, R.errCount, R.dirty, R.btnRevert, R.btnSave, R.btnJson, renderMenu(true)));
   }
@@ -289,17 +335,17 @@
   /** @param {boolean} ready */
   function renderMenu(ready) {
     const items = [
-      ["go-to-file", "在编辑器中打开 config.json", () => post({ type: "openConfigFile" })],
-      ["folder-opened", "打开日志目录", () => post({ type: "openLogs" })],
+      ["go-to-file", T("ui.menuOpenConfig"), () => post({ type: "openConfigFile" })],
+      ["folder-opened", T("ui.menuOpenLogs"), () => post({ type: "openLogs" })],
       null,
-      ["cloud-download", "导入配置…", () => post({ type: "import" })],
-      ready ? ["file-add", "导出配置…", () => post({ type: "export", raw: exportCurrent() })] : undefined,
-      ready ? ["history", "恢复默认值（未保存）", resetDefaults] : undefined,
+      ["cloud-download", T("ui.menuImport"), () => post({ type: "import" })],
+      ready ? ["file-add", T("ui.menuExport"), () => post({ type: "export", raw: exportCurrent() })] : undefined,
+      ready ? ["history", T("ui.menuDefaults"), resetDefaults] : undefined,
       null,
-      ["refresh", "从磁盘重新加载", () => post({ type: "reload" })],
+      ["refresh", T("ui.menuReload"), () => post({ type: "reload" })],
     ].filter((x) => x !== undefined);
     const menu = h("div", { class: "menu", role: "menu", hidden: true });
-    const btn = h("button", { class: "icon-btn", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": "更多操作", title: "更多操作" }, icon("ellipsis"));
+    const btn = h("button", { class: "icon-btn", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": T("ui.menuMore"), title: T("ui.menuMore") }, icon("ellipsis"));
     const close = () => { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); };
     for (const it of items) {
       if (!it) { menu.append(h("hr")); continue; }
@@ -328,34 +374,34 @@
   }
 
   function renderEmpty() {
-    return h("div", { class: "state-card", role: "region", "aria-label": "未找到配置文件" },
+    return h("div", { class: "state-card", role: "region", "aria-label": T("ui.emptyAria") },
       icon("file-add", "big"),
-      h("h2", { text: "未找到 config.json" }),
+      h("h2", { text: T("ui.emptyTitle") }),
       h("p", { class: "mono", text: S.meta?.configPath || "" }),
-      h("p", { text: "代理 DLL 需要与 version.dll 同目录的 config.json。可以用默认配置创建，或导入已有配置。" }),
+      h("p", { text: T("ui.emptyText") }),
       h("div", { class: "state-actions" },
-        h("button", { class: "btn primary", on: { click: () => post({ type: "createDefault" }) } }, icon("add"), "使用默认配置创建"),
-        h("button", { class: "btn secondary", on: { click: () => post({ type: "import" }) } }, icon("cloud-download"), "导入配置文件…")));
+        h("button", { class: "btn primary", on: { click: () => post({ type: "createDefault" }) } }, icon("add"), T("ui.createDefault")),
+        h("button", { class: "btn secondary", on: { click: () => post({ type: "import" }) } }, icon("cloud-download"), T("ui.importFile"))));
   }
 
   function renderError() {
-    const title = S.readStatus === "invalid" ? "配置文件无法解析" : "读取配置文件失败";
+    const title = T(S.readStatus === "invalid" ? "ui.errorInvalid" : "ui.errorRead");
     return h("div", { class: "state-card error", role: "alert" },
       icon("error", "big"),
       h("h2", { text: title }),
       h("p", { text: S.readError }),
       h("p", { class: "mono", text: S.meta?.configPath || "" }),
       h("div", { class: "state-actions" },
-        h("button", { class: "btn primary", on: { click: () => post({ type: "openConfigFile" }) } }, icon("go-to-file"), "在编辑器中修复"),
-        h("button", { class: "btn secondary", on: { click: () => post({ type: "reload" }) } }, icon("refresh"), "重新加载"),
-        h("button", { class: "btn secondary", on: { click: () => post({ type: "createDefault" }) }, title: "原文件会自动备份到插件存储目录" }, icon("history"), "用默认配置覆盖")));
+        h("button", { class: "btn primary", on: { click: () => post({ type: "openConfigFile" }) } }, icon("go-to-file"), T("ui.fixInEditor")),
+        h("button", { class: "btn secondary", on: { click: () => post({ type: "reload" }) } }, icon("refresh"), T("ui.reload")),
+        h("button", { class: "btn secondary", on: { click: () => post({ type: "createDefault" }) }, title: T("ui.overwriteDefaultTitle") }, icon("history"), T("ui.overwriteDefault"))));
   }
 
   // ============================================================
   // 状态带：补丁 / 待重启 / 连通 / 配置
   // ============================================================
   function renderStatusbandEl() {
-    R.band = h("section", { class: "statusband", "aria-label": "代理状态" });
+    R.band = h("section", { class: "statusband", "aria-label": T("ui.bandAria") });
     return R.band;
   }
 
@@ -364,25 +410,25 @@
     const chips = [];
     const p = S.meta.patch || {};
     if (!p.dllExists) {
-      chips.push(chip("err", "error", "补丁缺失（version.dll）", h("button", { class: "link-btn", on: { click: () => post({ type: "repair" }) } }, "修复")));
+      chips.push(chip("err", "error", T("ui.chipPatchMissing"), h("button", { class: "link-btn", on: { click: () => post({ type: "repair" }) } }, T("ui.repair"))));
     } else if (p.dllLoaded === true) {
-      chips.push(chip("ok", "pass-filled", "补丁已生效"));
+      chips.push(chip("ok", "pass-filled", T("ui.chipPatchActive")));
     } else if (p.dllLoaded === false) {
-      chips.push(chip("warn", "sync", "补丁文件就绪，重启后生效"));
+      chips.push(chip("warn", "sync", T("ui.chipPatchPending")));
     } else {
-      chips.push(chip("muted", "info", "补丁文件就绪"));
+      chips.push(chip("muted", "info", T("ui.chipPatchReady")));
     }
     if (S.meta.pendingRestart) {
-      chips.push(chip("warn", "debug-restart", "配置已更新，待重启生效", h("button", { class: "link-btn", on: { click: () => post({ type: "restart" }) } }, "立即重启")));
+      chips.push(chip("warn", "debug-restart", T("ui.chipPending"), h("button", { class: "link-btn", on: { click: () => post({ type: "restart" }) } }, T("common.restartNow"))));
     }
     if (S.form && S.form.proxy.port === 0) {
-      chips.push(chip("muted", "circle-slash", "代理已禁用（端口 0）"));
+      chips.push(chip("muted", "circle-slash", T("ui.chipDisabled")));
     } else if (S.probe.status === "running") {
-      chips.push(chip("muted", "loading", "正在测试连通性…", null, "codicon-modifier-spin"));
+      chips.push(chip("muted", "loading", T("ui.chipTesting"), null, "codicon-modifier-spin"));
     } else if (S.probe.status === "ok") {
-      chips.push(chip("ok", "pass-filled", `代理可用 · ${S.probe.result.latencyMs} ms`));
+      chips.push(chip("ok", "pass-filled", T("ui.chipProxyOk", { ms: S.probe.result.latencyMs })));
     } else if (S.probe.status === "fail") {
-      chips.push(chip("err", "debug-disconnect", "代理不可用", h("button", { class: "link-btn", on: { click: () => scrollToRow("probe") } }, "详情")));
+      chips.push(chip("err", "debug-disconnect", T("ui.chipProxyFail"), h("button", { class: "link-btn", on: { click: () => scrollToRow("probe") } }, T("ui.details"))));
     }
     R.band.replaceChildren(...chips);
   }
@@ -398,19 +444,40 @@
   // 主体
   // ============================================================
   function renderBody() {
-    R.toc = h("nav", { class: "toc", "aria-label": "设置分区" });
+    R.toc = h("nav", { class: "toc", "aria-label": T("ui.tocAria") });
     R.content = h("main", { class: "content", tabindex: "-1" });
+    R.onboard = null;
     for (const s of SECTIONS) {
       R.toc.append(h("a", { href: `#sec-${s.id}`, dataset: { sec: s.id }, on: { click: (/** @type {Event} */ e) => { e.preventDefault(); scrollToSection(s.id); } } },
         icon(s.icon), h("span", { text: s.title }), h("span", { class: "toc-count", hidden: true })));
-      const sec = h("section", { class: "section", id: `sec-${s.id}`, "aria-labelledby": `sec-title-${s.id}` },
+      const sec = h("section", { class: `section${s.id === "proxy" && S.attention ? " attention" : ""}`, id: `sec-${s.id}`, "aria-labelledby": `sec-title-${s.id}` },
         h("h2", { class: "section-title", id: `sec-title-${s.id}` }, icon(s.icon), s.title));
+      if (s.id === "proxy") {
+        R.proxySection = sec;
+        // 首次引导说明：告诉用户为什么自动打开了设置，以及接下来会发生什么
+        if (S.onboarding) {
+          R.onboard = h("div", { class: "onboard-note", role: "status" },
+            icon("info"), h("div", {}, h("strong", { text: T("ui.onboardTitle") }), h("span", { text: T("ui.onboardText") })));
+          sec.append(R.onboard);
+        }
+      }
       for (const row of s.rows) sec.append(renderRow(s, row));
       R.content.append(sec);
     }
-    R.drawer = h("aside", { class: "drawer", hidden: !S.drawer, "aria-label": "JSON 预览" });
+    R.drawer = h("aside", { class: "drawer", hidden: !S.drawer, "aria-label": T("ui.drawerAria") });
     renderDrawer();
     return h("div", { class: "body" }, R.toc, R.content, R.drawer);
+  }
+
+  /** 【代理】区域引导高亮：呼吸描边 3 次后保持静态描边（减少动态效果时只显示静态描边） @param {boolean} on */
+  function setAttention(on) {
+    S.attention = on;
+    if (!R.proxySection) return;
+    R.proxySection.classList.remove("attention");
+    if (on) {
+      void R.proxySection.offsetWidth; // 强制回流，确保再次触发时动画重新播放
+      R.proxySection.classList.add("attention");
+    }
   }
 
   /** @param {any} sec @param {any} row */
@@ -456,10 +523,16 @@
         control.append(renderTags(row.path, row.itemKind, row.placeholder));
         break;
       case "probe":
-        R.probeBtn = h("button", { class: "btn secondary", on: { click: runProbe } }, icon("plug"), "测试连接");
+        R.probeBtn = h("button", { class: "btn secondary", on: { click: runProbe } }, icon("plug"), T("ui.testConnection"));
         R.probeOut = h("span", { class: "probe-result", role: "status" });
         control.append(R.probeBtn, R.probeOut);
         renderProbe();
+        break;
+      case "scan":
+        R.scanBtn = h("button", { class: "btn secondary", on: { click: runScan } }, icon("search"), T("ui.scanButton"));
+        R.scanOut = h("div", { class: "scan-result", role: "status", "aria-live": "polite" });
+        control.append(h("div", { class: "scan-wrap" }, R.scanBtn, R.scanOut));
+        renderScan();
         break;
       case "rules":
         R.rules = h("div", { class: "rules" });
@@ -494,7 +567,7 @@
       if (f.path === "proxy.port") syncPresets();
     });
     if (f.kind !== "password") return input;
-    const eye = h("button", { class: "icon-btn", title: "显示/隐藏", "aria-label": "显示或隐藏密码", "aria-pressed": String(S.showSecret) }, icon(S.showSecret ? "eye-closed" : "eye"));
+    const eye = h("button", { class: "icon-btn", title: T("ui.toggleSecret"), "aria-label": T("ui.toggleSecretAria"), "aria-pressed": String(S.showSecret) }, icon(S.showSecret ? "eye-closed" : "eye"));
     eye.addEventListener("click", () => {
       S.showSecret = !S.showSecret;
       input.type = S.showSecret ? "text" : "password";
@@ -507,16 +580,11 @@
 
   /** @param {any} row */
   function renderPresets(row) {
-    R.presets = h("span", { class: "presets", role: "group", "aria-label": "常用端口" });
+    R.presets = h("span", { class: "presets", role: "group", "aria-label": T("ui.presetsAria") });
     for (const [port, name] of row.presets) {
       R.presets.append(h("button", {
-        class: "preset", title: `${name} 常用端口`, dataset: { port: String(port) },
-        on: { click: () => {
-          const input = /** @type {HTMLInputElement} */ (document.querySelector('[data-path="proxy.port"]'));
-          input.value = String(port);
-          setValue("proxy.port", port);
-          syncPresets();
-        } },
+        class: "preset", title: T("preset.title", { name }), dataset: { port: String(port) },
+        on: { click: () => setProxyField("proxy.port", port) },
       }, `${port} · ${name}`));
     }
     syncPresets();
@@ -530,15 +598,31 @@
     }
   }
 
+  /**
+   * 以编程方式修改代理字段并同步对应控件（端口预设、扫描结果填入共用）。
+   * @param {"proxy.host" | "proxy.port" | "proxy.type"} path @param {any} value
+   */
+  function setProxyField(path, value) {
+    setValue(path, value);
+    if (path === "proxy.type") {
+      /** @type {any} */ (document.querySelector('.segmented[data-path="proxy.type"]'))?.sync?.();
+      return;
+    }
+    const input = /** @type {HTMLInputElement | null} */ (document.querySelector(`input[data-path="${path}"]`));
+    if (input) input.value = String(value);
+    if (path === "proxy.port") syncPresets();
+  }
+
   /** @param {any} row */
   function renderSegmented(row) {
-    const wrap = h("div", { class: "segmented", role: "radiogroup", "aria-label": row.title });
+    const wrap = h("div", { class: "segmented", role: "radiogroup", "aria-label": row.title, dataset: { path: row.path } });
     const sync = () => {
       for (const b of wrap.querySelectorAll("button")) b.setAttribute("aria-checked", String(b.dataset.v === Core.getPath(S.form, row.path)));
     };
     for (const o of row.options) {
       wrap.append(h("button", { dataset: { v: o.v }, role: "radio", on: { click: () => { setValue(row.path, o.v); sync(); } } }, o.label));
     }
+    /** @type {any} */ (wrap).sync = sync;
     sync();
     return wrap;
   }
@@ -580,7 +664,7 @@
         const err = S.errors[`${errPrefix}[${i}]`];
         frag.append(h("span", { class: `tag${err ? " invalid" : ""}`, title: err || String(v) },
           h("span", { class: "tag-text", text: String(v) }),
-          h("button", { "aria-label": `删除 ${v}`, on: { click: (/** @type {Event} */ e) => { e.stopPropagation(); const next = [...get()]; next.splice(i, 1); set(next); paint(); } } }, icon("close"))));
+          h("button", { "aria-label": T("ui.removeTag", { value: v }), on: { click: (/** @type {Event} */ e) => { e.stopPropagation(); const next = [...get()]; next.splice(i, 1); set(next); paint(); } } }, icon("close"))));
       });
       box.insertBefore(frag, input);
     };
@@ -592,7 +676,7 @@
       for (const p of parts) {
         if (itemKind === "port") {
           const n = Core.normalizeInt(p, NaN);
-          if (!Number.isInteger(n) || n < 1 || n > 65535) { toast("warn", `端口需为 1-65535 的整数：${p}`); continue; }
+          if (!Number.isInteger(n) || n < 1 || n > 65535) { toast("warn", T("ui.badPort", { value: p })); continue; }
           if (!next.includes(n)) next.push(n);
         } else if (!next.includes(p)) {
           next.push(p);
@@ -629,16 +713,100 @@
     R.probeBtn.disabled = p.status === "running";
     if (p.status === "idle") {
       R.probeOut.className = "probe-result";
-      R.probeOut.replaceChildren(h("span", { text: "尚未测试" }));
+      R.probeOut.replaceChildren(h("span", { text: T("ui.notTested") }));
     } else if (p.status === "running") {
       R.probeOut.className = "probe-result";
-      R.probeOut.replaceChildren(icon("loading", "codicon-modifier-spin"), "正在建立隧道…");
+      R.probeOut.replaceChildren(icon("loading", "codicon-modifier-spin"), T("ui.testing"));
     } else {
       const ok = p.status === "ok";
       R.probeOut.className = `probe-result ${ok ? "ok" : "fail"}`;
       R.probeOut.replaceChildren(icon(ok ? "pass-filled" : "error"), h("span", { text: p.result.message }),
         h("span", { class: "probe-latency", text: `${p.result.latencyMs} ms` }));
     }
+  }
+
+  // ---------- 本机代理扫描 ----------
+  function runScan() {
+    if (!S.form || S.scan.status === "running") return;
+    S.scan = { status: "running" };
+    renderScan();
+    post({ type: "scan", proxy: clone(S.form.proxy) });
+  }
+
+  /** @param {any} c */
+  const sameAsForm = (c) => S.form && c.host === S.form.proxy.host && c.port === S.form.proxy.port && c.type === S.form.proxy.type;
+
+  /** @param {any} result */
+  function onScanResult(result) {
+    S.scan = { status: "done", result };
+    const list = result?.candidates || [];
+    const others = list.filter((/** @type {any} */ c) => !sameAsForm(c));
+    // 当前配置不可用且只找到一个可用代理：自动填入（不自动保存），并高亮保存按钮
+    if (list.length === 1 && others.length === 1 && S.probe.status !== "ok") {
+      applyCandidate(others[0]);
+      S.scan.applied = true;
+    }
+    if (!list.length) {
+      // 一个都没找到：保持【代理】区域高亮，并把焦点交给端口输入框，引导手动填写
+      setAttention(true);
+      /** @type {HTMLInputElement | null} */ (document.querySelector('input[data-path="proxy.port"]'))?.focus({ preventScroll: true });
+    }
+    renderScan();
+  }
+
+  /** 填入扫描到的代理；该端点已完成隧道验证，直接标记为可用 @param {any} c */
+  function applyCandidate(c) {
+    setProxyField("proxy.host", c.host);
+    setProxyField("proxy.port", c.port);
+    setProxyField("proxy.type", c.type);
+    S.probe = { status: "ok", result: { ok: true, message: c.message, latencyMs: c.latencyMs } };
+    renderProbe();
+    renderStatusband();
+    R.btnSave?.classList.add("attention");
+    renderScan();
+  }
+
+  function renderScan() {
+    if (!R.scanOut) return;
+    const sc = S.scan;
+    R.scanBtn.disabled = sc.status === "running";
+    if (sc.status === "idle") {
+      R.scanOut.className = "scan-result";
+      R.scanOut.replaceChildren(h("span", { class: "muted", text: T("ui.scanIdle") }));
+      return;
+    }
+    if (sc.status === "running") {
+      R.scanOut.className = "scan-result";
+      R.scanOut.replaceChildren(h("span", {}, icon("loading", "codicon-modifier-spin"), " ", T("ui.scanning")));
+      return;
+    }
+    const list = sc.result?.candidates || [];
+    if (!list.length) {
+      R.scanOut.className = "scan-result warn";
+      R.scanOut.replaceChildren(h("div", { class: "msg-warn" }, icon("warning"), h("span", { text: T("ui.scanNone") })));
+      return;
+    }
+    R.scanOut.className = "scan-result ok";
+    const head = sc.applied
+      ? h("div", { class: "msg-ok" }, icon("pass-filled"), h("span", { text: T("ui.scanFoundOne") }))
+      : h("div", { class: "muted", text: T("ui.scanFoundMany", { n: list.length }) });
+    const chips = h("div", { class: "scan-list" });
+    for (const c of list) {
+      const current = sameAsForm(c);
+      const sources = c.sources.map((/** @type {string} */ s) => T(`scan.source${s[0].toUpperCase()}${s.slice(1)}`)).join(" / ");
+      chips.append(h("button", {
+        class: `scan-chip${current ? " current" : ""}`,
+        "aria-pressed": String(current),
+        title: c.message,
+        on: { click: () => applyCandidate(c) },
+      },
+      icon(current ? "pass-filled" : "plug"),
+      h("span", { class: "mono", text: `${c.host}:${c.port}` }),
+      h("span", { class: "scan-type", text: c.type.toUpperCase() }),
+      h("span", { class: "muted", text: `${sources} · ${c.latencyMs} ms` }),
+      h("span", { class: "scan-action", text: current ? T("ui.scanInUse") : T("ui.scanUse") })));
+    }
+    R.scanOut.replaceChildren(head, chips);
   }
 
   // ---------- 路由规则 ----------
@@ -650,10 +818,10 @@
     const list = rules();
     if (!list.length) {
       R.rules.append(h("div", { class: "empty-inline" }, icon("list-tree"),
-        h("span", { text: `暂无规则，全部连接按默认动作（${S.form.proxy_rules.routing.default_action}）处理。` })));
+        h("span", { text: T("ui.noRules", { action: S.form.proxy_rules.routing.default_action }) })));
     }
     list.forEach((/** @type {any} */ r, /** @type {number} */ i) => R.rules.append(renderRule(r, i)));
-    R.rules.append(h("div", {}, h("button", { class: "btn secondary", on: { click: addRule } }, icon("add"), "添加规则")));
+    R.rules.append(h("div", {}, h("button", { class: "btn secondary", on: { click: addRule } }, icon("add"), T("ui.addRule"))));
   }
 
   /** @param {any} r @param {number} i */
@@ -662,7 +830,12 @@
     const expanded = S.expandedRules.has(r.__ui_id);
     const ruleErrors = Object.entries(S.errors).filter(([k]) => k === prefix || k.startsWith(`${prefix}.`));
     const ruleWarns = Object.entries(S.warnings).filter(([k]) => k === prefix || k.startsWith(`${prefix}.`));
-    const condSummary = (/** @type {any} */ x) => [x.domains.length && `域名 ${x.domains.length}`, x.ip_cidrs_v4.length && `IPv4 ${x.ip_cidrs_v4.length}`, x.ip_cidrs_v6.length && `IPv6 ${x.ip_cidrs_v6.length}`, x.ports.length && `端口 ${x.ports.length}`].filter(Boolean).join(" · ") || "无匹配条件";
+    const condSummary = (/** @type {any} */ x) => [
+      x.domains.length && T("ui.sumDomains", { n: x.domains.length }),
+      x.ip_cidrs_v4.length && T("ui.sumIpv4", { n: x.ip_cidrs_v4.length }),
+      x.ip_cidrs_v6.length && T("ui.sumIpv6", { n: x.ip_cidrs_v6.length }),
+      x.ports.length && T("ui.sumPorts", { n: x.ports.length }),
+    ].filter(Boolean).join(" · ") || T("ui.sumNone");
     const summaryEl = h("span", { class: "rule-summary", text: condSummary(r) });
     const nameEl = h("span", { class: "rule-name", text: r.name });
     const update = (/** @type {(rule: any) => void} */ fn, repaintAll = false) => {
@@ -683,29 +856,30 @@
     };
 
     const head = h("div", { class: "rule-head" },
-      h("button", { class: "icon-btn", "aria-expanded": String(expanded), "aria-label": expanded ? "收起" : "展开", on: { click: () => { expanded ? S.expandedRules.delete(r.__ui_id) : S.expandedRules.add(r.__ui_id); renderRules(); } } }, icon(expanded ? "chevron-down" : "chevron-right")),
+      h("button", { class: "icon-btn", "aria-expanded": String(expanded), "aria-label": T(expanded ? "ui.collapse" : "ui.expand"), on: { click: () => { expanded ? S.expandedRules.delete(r.__ui_id) : S.expandedRules.add(r.__ui_id); renderRules(); } } }, icon(expanded ? "chevron-down" : "chevron-right")),
       nameEl,
       summaryEl,
       h("span", { class: `pill ${r.action}`, text: r.action }),
       (() => {
-        const cb = /** @type {HTMLInputElement} */ (h("input", { type: "checkbox", checked: !!r.enabled, "aria-label": "启用此规则" }));
+        const cb = /** @type {HTMLInputElement} */ (h("input", { type: "checkbox", checked: !!r.enabled, "aria-label": T("ui.enableRule") }));
         cb.addEventListener("change", () => update((x) => { x.enabled = cb.checked; }, true));
-        return h("label", { class: "check", title: "启用" }, cb, h("span", { class: "box" }, icon("check")));
+        return h("label", { class: "check", title: T("ui.enabled") }, cb, h("span", { class: "box" }, icon("check")));
       })(),
-      h("button", { class: "icon-btn", title: "上移", "aria-label": "上移", disabled: i === 0, on: { click: () => move(-1) } }, icon("arrow-up")),
-      h("button", { class: "icon-btn", title: "下移", "aria-label": "下移", disabled: i === rules().length - 1, on: { click: () => move(1) } }, icon("arrow-down")),
-      h("button", { class: "icon-btn", title: "删除", "aria-label": "删除规则", on: { click: () => { const next = clone(rules()); next.splice(i, 1); setValue("proxy_rules.routing.rules", next, true); } } }, icon("trash")));
+      h("button", { class: "icon-btn", title: T("ui.moveUp"), "aria-label": T("ui.moveUp"), disabled: i === 0, on: { click: () => move(-1) } }, icon("arrow-up")),
+      h("button", { class: "icon-btn", title: T("ui.moveDown"), "aria-label": T("ui.moveDown"), disabled: i === rules().length - 1, on: { click: () => move(1) } }, icon("arrow-down")),
+      h("button", { class: "icon-btn", title: T("ui.delete"), "aria-label": T("ui.deleteRule"), on: { click: () => { const next = clone(rules()); next.splice(i, 1); setValue("proxy_rules.routing.rules", next, true); } } }, icon("trash")));
 
     const card = h("div", { class: `rule${r.enabled ? "" : " disabled"}${ruleErrors.length ? " has-error" : ""}` }, head);
     if (!expanded) return card;
 
-    const nameInput = /** @type {HTMLInputElement} */ (h("input", { class: "input w-m", value: r.name, "aria-label": "规则名称" }));
+    const nameInput = /** @type {HTMLInputElement} */ (h("input", { class: "input w-m", value: r.name, "aria-label": T("ui.ruleName") }));
     nameInput.addEventListener("input", () => update((x) => { x.name = nameInput.value; }));
     nameInput.addEventListener("change", () => renderRules());
-    const action = /** @type {HTMLSelectElement} */ (h("select", { class: "select", "aria-label": "动作" }, h("option", { value: "proxy" }, "proxy — 走代理"), h("option", { value: "direct" }, "direct — 直连")));
+    const action = /** @type {HTMLSelectElement} */ (h("select", { class: "select", "aria-label": T("ui.action") },
+      h("option", { value: "proxy" }, `proxy — ${T("opt.viaProxy")}`), h("option", { value: "direct" }, `direct — ${T("opt.direct")}`)));
     action.value = r.action;
     action.addEventListener("change", () => update((x) => { x.action = action.value; }, true));
-    const prio = /** @type {HTMLInputElement} */ (h("input", { class: "input w-s", type: "number", value: String(r.priority), "aria-label": "优先级" }));
+    const prio = /** @type {HTMLInputElement} */ (h("input", { class: "input w-s", type: "number", value: String(r.priority), "aria-label": T("ui.priority") }));
     prio.addEventListener("input", () => update((x) => { x.priority = Core.normalizeInt(prio.value, 0); }));
 
     /** @param {string} key @param {string} label @param {string} ph @param {"text"|"portRange"} kind */
@@ -719,17 +893,17 @@
     ];
 
     const body = h("div", { class: "rule-body" },
-      h("label", { text: "名称" }), nameInput,
-      h("label", { text: "动作" }), action,
-      S.form.proxy_rules.routing.priority_mode === "number" ? [h("label", { text: "优先级" }), prio] : null,
-      ...tagRow("domains", "域名", "如 *.google.com", "text"),
-      ...tagRow("ip_cidrs_v4", "IPv4 网段", "如 10.0.0.0/8", "text"),
-      ...tagRow("ip_cidrs_v6", "IPv6 网段", "如 fd00::/8", "text"),
-      ...tagRow("ports", "端口", "443 或 8000-9000", "portRange"),
-      ...tagRow("protocols", "协议", "tcp", "text"),
+      h("label", { text: T("ui.name") }), nameInput,
+      h("label", { text: T("ui.action") }), action,
+      S.form.proxy_rules.routing.priority_mode === "number" ? [h("label", { text: T("ui.priority") }), prio] : null,
+      ...tagRow("domains", T("ui.domains"), T("ui.domainsPh"), "text"),
+      ...tagRow("ip_cidrs_v4", T("ui.ipv4"), T("ui.ipv4Ph"), "text"),
+      ...tagRow("ip_cidrs_v6", T("ui.ipv6"), T("ui.ipv6Ph"), "text"),
+      ...tagRow("ports", T("ui.ports"), T("ui.portsPh"), "portRange"),
+      ...tagRow("protocols", T("ui.protocols"), "tcp", "text"),
       (ruleErrors.length || ruleWarns.length)
         ? h("div", { class: "rule-errors" },
-          ...ruleErrors.map(([k, v]) => h("div", { class: "msg-err" }, icon("error"), `${k.slice(prefix.length) || "规则"}：${v}`)),
+          ...ruleErrors.map(([k, v]) => h("div", { class: "msg-err" }, icon("error"), T("ui.fieldMsg", { field: k.slice(prefix.length) || T("ui.rule"), msg: v }))),
           ...ruleWarns.map(([, v]) => h("div", { class: "msg-warn" }, icon("warning"), v)))
         : null);
     card.append(body);
@@ -759,7 +933,7 @@
 
   function refreshAll() {
     if (S.phase !== "ready") return;
-    const v = Core.validateForm(S.form);
+    const v = Core.validateForm(S.form, LANG);
     S.errors = v.errors;
     S.warnings = v.warnings;
 
@@ -781,7 +955,7 @@
       ref.el.classList.toggle("modified", modified);
       const msgs = byRow.get(id) || { err: [], warn: [] };
       if (id === "proxy_rules.routing.rules") {
-        ref.msg.replaceChildren(msgs.err.length ? h("div", { class: "msg-err" }, icon("error"), `规则中有 ${msgs.err.length} 处错误，已标红`) : "");
+        ref.msg.replaceChildren(msgs.err.length ? h("div", { class: "msg-err" }, icon("error"), T("ui.ruleErrors", { n: msgs.err.length })) : "");
       } else {
         ref.msg.replaceChildren(
           ...msgs.err.map((m) => h("div", { class: "msg-err" }, icon("error"), m)),
@@ -813,9 +987,10 @@
     const n = errorCount();
     R.dirty.hidden = !dirty;
     R.errCount.hidden = n === 0;
-    R.errCount.textContent = `${n} 个错误`;
+    R.errCount.textContent = T("ui.errorCount", { n });
     R.btnSave.disabled = !dirty || n > 0 || S.saving;
     R.btnRevert.disabled = !dirty || S.saving;
+    if (!dirty) R.btnSave.classList.remove("attention");
     renderDrawer();
     renderStatusband();
   }
@@ -827,7 +1002,7 @@
     if (S.phase !== "ready" || S.saving) return;
     refreshAll();
     if (errorCount() > 0) {
-      toast("error", `存在 ${errorCount()} 个错误，请先修正`);
+      toast("error", T("ui.fixErrorsFirst", { n: errorCount() }));
       jumpToFirstError();
       return;
     }
@@ -848,7 +1023,7 @@
     S.form = Core.defaultForm(S.form._version);
     S.form.proxy = keep; // 代理端口等连接信息保留，避免“恢复默认”后立即断网
     render();
-    toast("info", "已恢复默认值（代理连接信息保留），保存后生效");
+    toast("info", T("ui.defaultsRestored"));
   }
 
   function jumpToFirstError() {
@@ -911,9 +1086,9 @@
     const current = JSON.stringify(exportCurrent(), null, 2);
     const tab = (/** @type {string} */ mode, /** @type {string} */ label) => h("button", { class: "tab", role: "tab", "aria-selected": String(S.drawerMode === mode), on: { click: () => { S.drawerMode = mode; persist(); renderDrawer(); } } }, label);
     const head = h("div", { class: "drawer-head" },
-      h("div", { class: "tabs", role: "tablist" }, tab("changes", "变更"), tab("full", "完整 JSON")),
-      h("button", { class: "icon-btn", title: "复制 JSON", "aria-label": "复制 JSON", on: { click: () => post({ type: "copy", text: current }) } }, icon("copy")),
-      h("button", { class: "icon-btn", title: "关闭（Esc）", "aria-label": "关闭预览", on: { click: toggleDrawer } }, icon("close")));
+      h("div", { class: "tabs", role: "tablist" }, tab("changes", T("ui.tabChanges")), tab("full", T("ui.tabFull"))),
+      h("button", { class: "icon-btn", title: T("ui.copyJson"), "aria-label": T("ui.copyJson"), on: { click: () => post({ type: "copy", text: current }) } }, icon("copy")),
+      h("button", { class: "icon-btn", title: T("ui.closeEsc"), "aria-label": T("ui.closePreview"), on: { click: toggleDrawer } }, icon("close")));
     const pre = h("pre", { class: "code", tabindex: "0" });
     if (S.drawerMode === "full") {
       for (const line of maskSecret(current).split("\n")) pre.append(h("span", { class: "ln", text: line || " " }));
@@ -924,7 +1099,7 @@
     const after = maskSecret(current).split("\n");
     const diff = lineDiff(before, after);
     if (!diff.some((d) => d.t !== " ")) {
-      R.drawer.replaceChildren(head, h("div", { class: "drawer-empty" }, icon("pass"), " 与磁盘上的 config.json 一致，没有未保存的变更"));
+      R.drawer.replaceChildren(head, h("div", { class: "drawer-empty" }, icon("pass"), " ", T("ui.noChanges")));
       return;
     }
     // 只展示变更行及上下 2 行上下文
@@ -972,13 +1147,13 @@
     R.banner.hidden = !b;
     if (!b) return;
     R.banner.className = `banner${b.kind === "error" ? " error" : ""}`;
-    const dismiss = h("button", { class: "icon-btn", "aria-label": "关闭", on: { click: () => { S.banner = null; renderBanner(); } } }, icon("close"));
+    const dismiss = h("button", { class: "icon-btn", "aria-label": T("common.close"), on: { click: () => { S.banner = null; renderBanner(); } } }, icon("close"));
     R.banner.replaceChildren(
       icon(b.kind === "error" ? "error" : "info"),
-      h("span", { class: "banner-text", text: b.text }),
+      h("span", { class: "banner-text", text: T(b.key, b.params) }),
       b.kind === "error"
-        ? h("button", { class: "btn secondary", on: { click: save } }, icon("refresh"), "重试")
-        : h("button", { class: "btn primary", on: { click: () => post({ type: "restart" }) } }, icon("debug-restart"), "立即重启 IDE"),
+        ? h("button", { class: "btn secondary", on: { click: save } }, icon("refresh"), T("ui.retry"))
+        : h("button", { class: "btn primary", on: { click: () => post({ type: "restart" }) } }, icon("debug-restart"), T("ui.restartIde")),
       dismiss);
   }
 
@@ -1007,7 +1182,7 @@
   // 启动
   // ============================================================
   if (!Core) {
-    app.replaceChildren(h("div", { class: "state-card error" }, icon("error", "big"), h("h2", { text: "缺少共享配置核心 config-core.js" }), h("p", { text: "插件打包不完整，请重新安装插件。" })));
+    app.replaceChildren(h("div", { class: "state-card error" }, icon("error", "big"), h("h2", { text: T("ui.coreMissingTitle") }), h("p", { text: T("ui.coreMissingText") })));
     return;
   }
   render();

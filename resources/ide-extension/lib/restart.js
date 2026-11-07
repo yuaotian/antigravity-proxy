@@ -125,13 +125,14 @@ function runLauncher(script, timeoutMs = 15000) {
  * 拉起重启器并退出 IDE。
  * @param {typeof import("vscode")} vscode
  * @param {string} exePath
+ * @param {(key: string) => string} t 翻译函数
  */
-async function restartIde(vscode, exePath) {
+async function restartIde(vscode, exePath, t) {
   const mainPid = process.ppid;
   const ok = await runLauncher(buildLauncherScript(mainPid, buildRelauncherScript(mainPid, exePath)));
   if (!ok) {
     // 重启器未能启动时不退出 IDE，避免用户“只关不开”
-    void vscode.window.showErrorMessage("无法启动重启助手，请手动关闭并重新打开 IDE 使代理配置生效。");
+    void vscode.window.showErrorMessage(t("ext.restartHelperFailed"));
     return;
   }
   await vscode.commands.executeCommand("workbench.action.quit");

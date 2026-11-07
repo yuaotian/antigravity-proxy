@@ -3,13 +3,15 @@
 
 /**
  * 配置面板（Webview）宿主侧：负责面板生命周期与消息路由。
- * UI 渲染全部在 media/panel.js；文件读写委托 ConfigStore；网络探测委托 proxyProbe。
+ * UI 渲染全部在 media/panel.js；文件读写委托 ConfigStore；网络探测委托 proxyProbe；本机代理扫描委托 deps.scan。
  *
  * 消息协议（webview → host）：
- *   ready | reload | save{raw} | probe{proxy} | restart | repair | createDefault
+ *   ready | reload | save{raw} | probe{proxy} | scan{proxy} | restart | repair | createDefault
  *   openConfigFile | openLogs | import | export{raw} | copy{text}
  * 消息协议（host → webview）：
- *   init{read, meta} | saved{ok, error?} | probeResult{result} | imported{raw} | toast{kind, text}
+ *   init{lang, read, meta, intent?} | lang{lang} | meta{meta} | saved{ok, error?} | probeResult{result}
+ *   scanResult{result} | imported{raw} | toast{kind, text}
+ * intent：onboarding（首次引导：自动扫描 + 引导动画）| scan（命令触发：自动扫描）
  */
 
 const fs = require("fs");
@@ -32,16 +34,22 @@ class ConfigPanel {
    * @property {() => void} onSaved            保存成功后的回调（刷新状态栏、标记待重启）
    * @property {() => Promise<void>} restart
    * @property {() => Promise<void>} repair
+   * @property {(current: any) => Promise<import("./proxyScan").ScanResult>} scan 本机代理扫描
+   * @property {(key: string, params?: Record<string, any>) => string} t 翻译函数
+   * @property {() => string} lang             当前界面语言（zh-cn / en / ru）
    */
 
-  /** @param {PanelDeps} deps */
-  static show(deps) {
+  /**
+   * @param {PanelDeps} deps
+   * @param {{ intent?: "onboarding" | "scan" }} [opts]
+   */
+  static show(deps, opts = {}) {
     if (ConfigPanel.current) {
       ConfigPanel.current.panel.reveal();
-      ConfigPanel.current.postInit();
+      ConfigPanel.current.postInit(opts.intent);
       return;
     }
-    ConfigPanel.current = new ConfigPanel(deps);
+    ConfigPanel.current = new ConfigPanel(deps, opts.intent);
   }
 
   /** 状态变化（保存/修复/外部修改）后通知已打开的面板刷新状态带 */
@@ -49,12 +57,22 @@ class ConfigPanel {
     ConfigPanel.current?.postMeta();
   }
 
-  /** @param {PanelDeps} deps */
-  constructor(deps) {
+  /** 界面语言变化：更新标题并让 Webview 按新语言重绘（保留未保存的编辑） */
+  static relocalizeIfOpen() {
+    const p = ConfigPanel.current;
+    if (!p) return;
+    p.panel.title = p.deps.t("host.panelTitle");
+    p.post({ type: "lang", lang: p.deps.lang() });
+  }
+
+  /** @param {PanelDeps} deps @param {"onboarding" | "scan" | undefined} intent */
+  constructor(deps, intent) {
     this.deps = deps;
+    // Webview 加载完成（ready）后随首个 init 下发一次，避免脚本尚未就绪时消息丢失
+    this.pendingIntent = intent;
     const { vscode, extensionUri } = deps;
     const mediaUri = vscode.Uri.joinPath(extensionUri, "media");
-    this.panel = vscode.window.createWebviewPanel("antigravityProxy.settings", "代理设置", vscode.ViewColumn.Active, {
+    this.panel = vscode.window.createWebviewPanel("antigravityProxy.settings", deps.t("host.panelTitle"), vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [mediaUri],
@@ -82,9 +100,10 @@ class ConfigPanel {
     };
   }
 
-  postInit() {
+  /** @param {"onboarding" | "scan"} [intent] */
+  postInit(intent) {
     const read = this.deps.store.read();
-    this.post({ type: "init", read: { status: read.status, raw: read.raw, error: read.error }, meta: this.meta() });
+    this.post({ type: "init", lang: this.deps.lang(), intent, read: { status: read.status, raw: read.raw, error: read.error }, meta: this.meta() });
   }
 
   postMeta() {
@@ -93,19 +112,22 @@ class ConfigPanel {
 
   /** @param {any} msg */
   async onMessage(msg) {
-    const { vscode, info, store } = this.deps;
+    const { vscode, info, store, t } = this.deps;
     try {
       switch (msg?.type) {
         case "ready":
-        case "reload":
-          this.postInit();
+        case "reload": {
+          const intent = this.pendingIntent;
+          this.pendingIntent = undefined;
+          this.postInit(intent);
           break;
+        }
         case "save": {
           // 宿主侧二次校验：Webview 被篡改或版本不一致时也不会写出非法配置
-          const { errors } = Core.validateForm(Core.normalizeForm(msg.raw));
+          const { errors } = Core.validateForm(Core.normalizeForm(msg.raw), this.deps.lang());
           const count = Object.keys(errors).length;
           if (count > 0) {
-            this.post({ type: "saved", ok: false, error: `配置存在 ${count} 个错误，未保存。` });
+            this.post({ type: "saved", ok: false, error: t("host.saveHasErrors", { count }) });
             break;
           }
           const r = store.write(msg.raw);
@@ -118,8 +140,13 @@ class ConfigPanel {
           break;
         }
         case "probe": {
-          const result = await probeProxy(msg.proxy, { timeoutMs: 6000 });
+          const result = await probeProxy(msg.proxy, { timeoutMs: 6000, t });
           this.post({ type: "probeResult", result });
+          break;
+        }
+        case "scan": {
+          const result = await this.deps.scan(msg.proxy);
+          this.post({ type: "scanResult", result });
           break;
         }
         case "restart":
@@ -147,18 +174,18 @@ class ConfigPanel {
           if (fs.existsSync(info.configPath)) {
             await vscode.window.showTextDocument(vscode.Uri.file(info.configPath), { preview: false });
           } else {
-            this.post({ type: "toast", kind: "warn", text: "config.json 不存在" });
+            this.post({ type: "toast", kind: "warn", text: t("host.configNotExist") });
           }
           break;
         case "openLogs":
           if (fs.existsSync(info.logsDir)) await vscode.env.openExternal(vscode.Uri.file(info.logsDir));
-          else this.post({ type: "toast", kind: "warn", text: `日志目录尚未生成：${info.logsDir}` });
+          else this.post({ type: "toast", kind: "warn", text: t("ext.logsNotFound", { path: info.logsDir }) });
           break;
         case "import": {
           const picked = await vscode.window.showOpenDialog({
             canSelectMany: false,
-            filters: { "JSON 配置": ["json", "jsonc"] },
-            title: "导入代理配置",
+            filters: { [t("host.jsonFilter")]: ["json", "jsonc"] },
+            title: t("host.importTitle"),
           });
           if (!picked || !picked[0]) break;
           const raw = Core.parseJsonc(fs.readFileSync(picked[0].fsPath, "utf8"));
@@ -167,18 +194,18 @@ class ConfigPanel {
         }
         case "export": {
           const target = await vscode.window.showSaveDialog({
-            filters: { "JSON 配置": ["json"] },
+            filters: { [t("host.jsonFilter")]: ["json"] },
             defaultUri: vscode.Uri.file("config.json"),
-            title: "导出代理配置",
+            title: t("host.exportTitle"),
           });
           if (!target) break;
           fs.writeFileSync(target.fsPath, JSON.stringify(msg.raw, null, 2) + "\n", "utf8");
-          this.post({ type: "toast", kind: "info", text: `已导出到 ${target.fsPath}` });
+          this.post({ type: "toast", kind: "info", text: t("host.exported", { path: target.fsPath }) });
           break;
         }
         case "copy":
           await vscode.env.clipboard.writeText(String(msg.text ?? ""));
-          this.post({ type: "toast", kind: "info", text: "已复制到剪贴板" });
+          this.post({ type: "toast", kind: "info", text: t("host.copied") });
           break;
         default:
           break;
@@ -193,7 +220,9 @@ class ConfigPanel {
    * @param {import("vscode").Uri} mediaUri
    */
   renderHtml(webview, mediaUri) {
-    const { vscode } = this.deps;
+    const { vscode, t } = this.deps;
+    const lang = this.deps.lang();
+    const htmlLang = { "zh-cn": "zh-CN", en: "en", ru: "ru" }[lang] || "en";
     const nonce = crypto.randomBytes(16).toString("base64");
     const uri = (/** @type {string[]} */ ...p) => webview.asWebviewUri(vscode.Uri.joinPath(mediaUri, ...p)).toString();
     const csp = [
@@ -203,18 +232,20 @@ class ConfigPanel {
       `font-src ${webview.cspSource}`,
       `script-src 'nonce-${nonce}'`,
     ].join("; ");
+    // data-lang：首帧（骨架屏）即使用正确语言，无需等待 init 消息
     return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang}">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="${uri("codicons", "codicon.css")}" />
   <link rel="stylesheet" href="${uri("panel.css")}" />
-  <title>代理设置</title>
+  <title>${t("host.panelTitle")}</title>
 </head>
 <body>
-  <div id="app" class="app" data-phase="loading" data-icon="${uri("icon.png")}"></div>
+  <div id="app" class="app" data-phase="loading" data-lang="${lang}" data-icon="${uri("icon.png")}"></div>
+  <script nonce="${nonce}" src="${uri("i18n.js")}"></script>
   <script nonce="${nonce}" src="${uri("config-core.js")}"></script>
   <script nonce="${nonce}" src="${uri("panel.js")}"></script>
 </body>

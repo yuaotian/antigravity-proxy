@@ -13,9 +13,14 @@
 const fs = require("fs");
 const path = require("path");
 const Core = require("./core");
+const I18n = require("../media/i18n");
 
 const MAX_BACKUPS = 10;
 const LAST_GOOD_NAME = "last-good-config.json";
+// 未传入翻译函数时使用简体中文
+const DEFAULT_T = I18n.createT("zh-cn");
+
+/** @typedef {(key: string, params?: Record<string, any>) => string} Translate */
 
 /**
  * @typedef {Object} ReadResult
@@ -29,8 +34,10 @@ class ConfigStore {
   /**
    * @param {string} configPath  安装目录下的 config.json
    * @param {string} storageDir  插件全局存储目录（context.globalStorageUri.fsPath）
+   * @param {Translate} [t]      翻译函数（随界面语言切换）
    */
-  constructor(configPath, storageDir) {
+  constructor(configPath, storageDir, t = DEFAULT_T) {
+    this.t = t;
     this.configPath = configPath;
     this.storageDir = storageDir;
     this.backupDir = path.join(storageDir, "backups");
@@ -45,16 +52,16 @@ class ConfigStore {
     } catch (e) {
       const err = /** @type {NodeJS.ErrnoException} */ (e);
       if (err.code === "ENOENT") return { status: "missing" };
-      return { status: "error", error: describeFsError(err, this.configPath) };
+      return { status: "error", error: describeFsError(err, this.configPath, this.t) };
     }
     try {
       const raw = Core.parseJsonc(text);
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-        return { status: "invalid", text, error: "顶层必须是 JSON 对象" };
+        return { status: "invalid", text, error: this.t("store.notObject") };
       }
       return { status: "ok", raw, text };
     } catch (e) {
-      return { status: "invalid", text, error: `JSON 解析失败：${/** @type {Error} */ (e).message}` };
+      return { status: "invalid", text, error: this.t("store.parseFailed", { error: /** @type {Error} */ (e).message }) };
     }
   }
 
@@ -79,7 +86,7 @@ class ConfigStore {
       this.saveLastGood(obj);
       return { ok: true, backupPath };
     } catch (e) {
-      return { ok: false, error: describeFsError(/** @type {NodeJS.ErrnoException} */ (e), this.configPath) };
+      return { ok: false, error: describeFsError(/** @type {NodeJS.ErrnoException} */ (e), this.configPath, this.t) };
     }
   }
 
@@ -134,13 +141,14 @@ class ConfigStore {
  * 将文件系统错误转为可操作的中文提示。
  * @param {NodeJS.ErrnoException} err
  * @param {string} filePath
+ * @param {Translate} [t]
  */
-function describeFsError(err, filePath) {
+function describeFsError(err, filePath, t = DEFAULT_T) {
   if (err && (err.code === "EPERM" || err.code === "EACCES")) {
-    return `没有写入权限：${filePath}。若 IDE 安装在 Program Files，请以管理员身份运行 IDE，或改用用户目录安装。`;
+    return t("fs.noPermission", { path: filePath });
   }
   if (err && err.code === "EBUSY") {
-    return `文件被占用：${filePath}，请稍后重试。`;
+    return t("fs.busy", { path: filePath });
   }
   return `${err?.code || "ERROR"}: ${err?.message || String(err)}`;
 }

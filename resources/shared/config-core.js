@@ -177,29 +177,29 @@
   const parseCidr = (cidr, family) => {
     const s = trim(cidr);
     const idx = s.indexOf("/");
-    if (idx <= 0) return { ok: false, reason: "缺少 / 前缀长度" };
+    if (idx <= 0) return { ok: false, reason: "缺少 / 前缀长度", code: "noPrefix" };
     const ip = s.slice(0, idx).trim();
     const bitsStr = s.slice(idx + 1).trim();
-    if (!bitsStr || !/^[0-9]+$/.test(bitsStr)) return { ok: false, reason: "前缀长度非法" };
+    if (!bitsStr || !/^[0-9]+$/.test(bitsStr)) return { ok: false, reason: "前缀长度非法", code: "badPrefix" };
     const bits = Number(bitsStr);
-    if (!Number.isInteger(bits)) return { ok: false, reason: "前缀长度非法" };
+    if (!Number.isInteger(bits)) return { ok: false, reason: "前缀长度非法", code: "badPrefix" };
 
     if (family === 4) {
-      if (bits < 0 || bits > 32) return { ok: false, reason: "IPv4 前缀需 0-32" };
-      if (!isValidIPv4(ip)) return { ok: false, reason: "IPv4 地址非法" };
+      if (bits < 0 || bits > 32) return { ok: false, reason: "IPv4 前缀需 0-32", code: "v4Prefix" };
+      if (!isValidIPv4(ip)) return { ok: false, reason: "IPv4 地址非法", code: "v4Addr" };
       return { ok: true };
     }
     if (family === 6) {
-      if (bits < 0 || bits > 128) return { ok: false, reason: "IPv6 前缀需 0-128" };
-      if (!isValidIPv6(ip)) return { ok: false, reason: "IPv6 地址非法" };
+      if (bits < 0 || bits > 128) return { ok: false, reason: "IPv6 前缀需 0-128", code: "v6Prefix" };
+      if (!isValidIPv6(ip)) return { ok: false, reason: "IPv6 地址非法", code: "v6Addr" };
       return { ok: true };
     }
-    return { ok: false, reason: "unknown family" };
+    return { ok: false, reason: "unknown family", code: "family" };
   };
 
   const parsePortRange = (token) => {
     const t = String(token ?? "").replace(/\s+/g, "");
-    if (!t) return { ok: false, reason: "为空" };
+    if (!t) return { ok: false, reason: "为空", code: "emptyReason" };
     const dash = t.indexOf("-");
     const parsePort = (s) => {
       if (!/^[0-9]+$/.test(s)) return null;
@@ -209,14 +209,14 @@
     };
     if (dash < 0) {
       const p = parsePort(t);
-      return p == null ? { ok: false, reason: "端口需 1-65535" } : { ok: true, start: p, end: p };
+      return p == null ? { ok: false, reason: "端口需 1-65535", code: "portReason" } : { ok: true, start: p, end: p };
     }
     const a = t.slice(0, dash);
     const b = t.slice(dash + 1);
-    if (!a || !b) return { ok: false, reason: "范围格式非法" };
+    if (!a || !b) return { ok: false, reason: "范围格式非法", code: "rangeFormat" };
     const pa = parsePort(a);
     const pb = parsePort(b);
-    if (pa == null || pb == null) return { ok: false, reason: "端口需 1-65535" };
+    if (pa == null || pb == null) return { ok: false, reason: "端口需 1-65535", code: "portReason" };
     return { ok: true, start: Math.min(pa, pb), end: Math.max(pa, pb) };
   };
 
@@ -510,160 +510,223 @@
   };
 
   // -------------------------
+  // 校验提示多语言（简体中文 / English / Русский）：key → [zh-cn, en, ru]
+  // 中文与旧版文案逐字一致，config-web 不传语言时行为不变；插件按界面语言传入 lang。
+  // -------------------------
+  const VLANGS = ["zh-cn", "en", "ru"];
+  const VMSG = Object.freeze({
+    commentEmpty: ["_comment 为空（不影响功能，但建议保留说明）", "_comment is empty (harmless, but keeping a description is recommended)", "_comment пуст (не влияет на работу, но лучше оставить описание)"],
+    versionEmpty: ["_version 为空（建议填写版本号，便于追踪）", "_version is empty (setting a version helps tracking)", "_version пуст (лучше указать версию для отслеживания)"],
+    buildDateEmpty: ["_build.date 为空（建议刷新）", "_build.date is empty (refresh recommended)", "_build.date пуст (рекомендуется обновить)"],
+    fieldMustBe: ["{field} 必须为 {values}", "{field} must be {values}", "{field} должен быть {values}"],
+    mustBe: ["必须为 {values}", "must be {values}", "должно быть {values}"],
+    fieldEmpty: ["{field} 不能为空", "{field} cannot be empty", "{field} не может быть пустым"],
+    empty: ["不能为空", "cannot be empty", "не может быть пустым"],
+    fieldBool: ["{field} 必须为布尔值", "{field} must be a boolean", "{field} должен быть логическим значением"],
+    bool: ["必须为布尔值", "must be a boolean", "должно быть логическим значением"],
+    proxyPortRange: ["proxy.port 必须为 0-65535 的整数", "proxy.port must be an integer from 0 to 65535", "proxy.port должен быть целым числом от 0 до 65535"],
+    proxyPortZero: ["proxy.port=0 将禁用代理（全部直连）", "proxy.port=0 disables the proxy (everything goes direct)", "proxy.port=0 отключает прокси (все соединения напрямую)"],
+    cidrBad: ["CIDR 格式错误：{reason}", "Invalid CIDR: {reason}", "Неверный CIDR: {reason}"],
+    positiveMs: ["必须为正整数（毫秒）", "must be a positive integer (milliseconds)", "должно быть положительным целым (миллисекунды)"],
+    nonNegativeMs: ["必须为 0 或正整数（毫秒）", "must be 0 or a positive integer (milliseconds)", "должно быть 0 или положительным целым (миллисекунды)"],
+    mirrorEmpty: ["代理站不能为空", "mirror cannot be empty", "зеркало не может быть пустым"],
+    mirrorHttps: ["代理站必须使用 https://", "mirror must use https://", "зеркало должно использовать https://"],
+    portRange: ["端口必须 1-65535", "port must be 1-65535", "порт должен быть от 1 до 65535"],
+    portZero: ["端口不能为 0", "port cannot be 0", "порт не может быть 0"],
+    portDup: ["重复端口（后端会排序去重）", "duplicate port (the backend sorts and de-duplicates)", "повторяющийся порт (DLL отсортирует и уберёт дубли)"],
+    udpFallbackIgnored: ["仅 udp_mode=auto/proxy 时生效；当前该设置不会生效", "only applies when udp_mode=auto/proxy; it has no effect now", "действует только при udp_mode=auto/proxy; сейчас не применяется"],
+    udpAutoHttp: ["auto 在 HTTP 代理下会按 udp_fallback={fallback} 处理", "with an HTTP proxy, auto behaves as udp_fallback={fallback}", "при HTTP-прокси auto работает как udp_fallback={fallback}"],
+    udpProxyNeedsSocks: ["proxy 模式依赖 SOCKS5 UDP Associate；当前代理类型不匹配", "proxy mode needs SOCKS5 UDP Associate; the current proxy type does not match", "режим proxy требует SOCKS5 UDP Associate; текущий тип прокси не подходит"],
+    priorityInt: ["priority 建议为整数", "priority should be an integer", "priority лучше задать целым числом"],
+    ruleNoCondition: ["该规则没有 domains/CIDR 条件，可能永远无法命中", "this rule has no domains/CIDR conditions and may never match", "у правила нет условий domains/CIDR, оно может никогда не сработать"],
+    ipv4Bad: ["IPv4 CIDR 无效：{reason}", "invalid IPv4 CIDR: {reason}", "неверный IPv4 CIDR: {reason}"],
+    ipv6Bad: ["IPv6 CIDR 无效：{reason}", "invalid IPv6 CIDR: {reason}", "неверный IPv6 CIDR: {reason}"],
+    domainEmpty: ["域名不能为空", "domain cannot be empty", "домен не может быть пустым"],
+    portRangeBad: ["端口范围无效：{reason}", "invalid port range: {reason}", "неверный диапазон портов: {reason}"],
+    protocolEmpty: ["协议不能为空", "protocol cannot be empty", "протокол не может быть пустым"],
+    protocolTcp: ["当前主要支持 tcp；其它值可能无法命中", "mainly tcp is supported; other values may never match", "поддерживается в основном tcp; другие значения могут не срабатывать"],
+    // parseCidr / parsePortRange 的失败原因（按 code 翻译）
+    noPrefix: ["缺少 / 前缀长度", "missing /prefix length", "нет длины префикса после /"],
+    badPrefix: ["前缀长度非法", "invalid prefix length", "недопустимая длина префикса"],
+    v4Prefix: ["IPv4 前缀需 0-32", "IPv4 prefix must be 0-32", "префикс IPv4 должен быть 0-32"],
+    v4Addr: ["IPv4 地址非法", "invalid IPv4 address", "недопустимый адрес IPv4"],
+    v6Prefix: ["IPv6 前缀需 0-128", "IPv6 prefix must be 0-128", "префикс IPv6 должен быть 0-128"],
+    v6Addr: ["IPv6 地址非法", "invalid IPv6 address", "недопустимый адрес IPv6"],
+    family: ["unknown family", "unknown family", "unknown family"],
+    portReason: ["端口需 1-65535", "port must be 1-65535", "порт должен быть от 1 до 65535"],
+    emptyReason: ["为空", "empty", "пусто"],
+    rangeFormat: ["范围格式非法", "invalid range format", "неверный формат диапазона"],
+  });
+
+  const makeVt = (lang) => {
+    const idx = Math.max(0, VLANGS.indexOf(String(lang || "zh-cn").toLowerCase()));
+    return (key, params) => {
+      const entry = VMSG[key];
+      let s = entry ? entry[idx] || entry[1] : key;
+      if (params) s = s.replace(/\{(\w+)\}/g, (all, name) => (name in params ? String(params[name]) : all));
+      return s;
+    };
+  };
+
+  // -------------------------
   // Validation（返回 { errors, warnings }，键为字段路径）
   // 注意：config-web 的结构漂移自检会扫描本函数源码中的字段标记，新增字段时请同步补充校验。
+  // lang：zh-cn（默认）| en | ru
   // -------------------------
-  const validateForm = (form) => {
+  const validateForm = (form, lang) => {
     const errors = {};
     const warnings = {};
+    const t = makeVt(lang);
+    // 失败原因优先按 code 翻译，未知 code 时退回原始 reason
+    const why = (rc) => (rc.code && VMSG[rc.code] ? t(rc.code) : rc.reason);
 
-    const err = (path, msg) => {
-      errors[path] = msg;
+    const err = (path, key, params) => {
+      errors[path] = t(key, params);
     };
-    const warn = (path, msg) => {
-      warnings[path] = msg;
+    const warn = (path, key, params) => {
+      warnings[path] = t(key, params);
     };
 
     // meta
-    if (!trim(form._comment)) warn("_comment", "_comment 为空（不影响功能，但建议保留说明）");
-    if (!trim(form._version)) warn("_version", "_version 为空（建议填写版本号，便于追踪）");
-    if (!trim(form?._build?.date)) warn("_build.date", "_build.date 为空（建议刷新）");
+    if (!trim(form._comment)) warn("_comment", "commentEmpty");
+    if (!trim(form._version)) warn("_version", "versionEmpty");
+    if (!trim(form?._build?.date)) warn("_build.date", "buildDateEmpty");
     if (!["Release", "Debug"].includes(String(form?._build?.config || ""))) {
-      err("_build.config", "_build.config 必须为 Release/Debug");
+      err("_build.config", "fieldMustBe", { field: "_build.config", values: "Release/Debug" });
     }
     if (!["x64", "x86"].includes(String(form?._build?.arch || ""))) {
-      err("_build.arch", "_build.arch 必须为 x64/x86");
+      err("_build.arch", "fieldMustBe", { field: "_build.arch", values: "x64/x86" });
     }
 
     // log_level
     if (!["debug", "info", "warn", "error"].includes(form.log_level)) {
-      err("log_level", "log_level 必须为 debug/info/warn/error");
+      err("log_level", "fieldMustBe", { field: "log_level", values: "debug/info/warn/error" });
     }
 
     // proxy
-    if (!trim(form.proxy.host)) err("proxy.host", "proxy.host 不能为空");
+    if (!trim(form.proxy.host)) err("proxy.host", "fieldEmpty", { field: "proxy.host" });
     const pp = form.proxy.port;
-    if (!Number.isInteger(pp) || pp < 0 || pp > 65535) err("proxy.port", "proxy.port 必须为 0-65535 的整数");
-    if (Number.isInteger(pp) && pp === 0) warn("proxy.port", "proxy.port=0 将禁用代理（全部直连）");
-    if (!["socks5", "http"].includes(form.proxy.type)) err("proxy.type", "proxy.type 必须为 socks5/http");
+    if (!Number.isInteger(pp) || pp < 0 || pp > 65535) err("proxy.port", "proxyPortRange");
+    if (Number.isInteger(pp) && pp === 0) warn("proxy.port", "proxyPortZero");
+    if (!["socks5", "http"].includes(form.proxy.type)) err("proxy.type", "fieldMustBe", { field: "proxy.type", values: "socks5/http" });
 
     // fake ip
-    if (typeof form.fake_ip.enabled !== "boolean") err("fake_ip.enabled", "必须为布尔值");
+    if (typeof form.fake_ip.enabled !== "boolean") err("fake_ip.enabled", "bool");
     const cidr = trim(form.fake_ip.cidr);
-    if (!cidr) err("fake_ip.cidr", "fake_ip.cidr 不能为空");
+    if (!cidr) err("fake_ip.cidr", "fieldEmpty", { field: "fake_ip.cidr" });
     else {
       const rc = parseCidr(cidr, 4);
-      if (!rc.ok) err("fake_ip.cidr", `CIDR 格式错误：${rc.reason}`);
+      if (!rc.ok) err("fake_ip.cidr", "cidrBad", { reason: why(rc) });
     }
 
     // timeout
     for (const k of ["connect", "send", "recv"]) {
       const v = form.timeout[k];
-      if (!Number.isInteger(v) || v <= 0) err(`timeout.${k}`, "必须为正整数（毫秒）");
+      if (!Number.isInteger(v) || v <= 0) err(`timeout.${k}`, "positiveMs");
     }
 
     // updates
-    if (typeof form.updates.enabled !== "boolean") err("updates.enabled", "必须为布尔值");
-    if (typeof form.updates.notify_once !== "boolean") err("updates.notify_once", "必须为布尔值");
-    if (typeof form.updates.allow_insecure_mirrors !== "boolean") err("updates.allow_insecure_mirrors", "必须为布尔值");
+    if (typeof form.updates.enabled !== "boolean") err("updates.enabled", "bool");
+    if (typeof form.updates.notify_once !== "boolean") err("updates.notify_once", "bool");
+    if (typeof form.updates.allow_insecure_mirrors !== "boolean") err("updates.allow_insecure_mirrors", "bool");
     if (!Number.isInteger(form.updates.check_delay_ms) || form.updates.check_delay_ms < 0) {
-      err("updates.check_delay_ms", "必须为 0 或正整数（毫秒）");
+      err("updates.check_delay_ms", "nonNegativeMs");
     }
     if (!Number.isInteger(form.updates.timeout_ms) || form.updates.timeout_ms <= 0) {
-      err("updates.timeout_ms", "必须为正整数（毫秒）");
+      err("updates.timeout_ms", "positiveMs");
     }
     (form.updates.mirrors || []).forEach((s, i) => {
       const v = trim(s);
-      if (!v) err(`updates.mirrors[${i}]`, "代理站不能为空");
-      if (v && !/^https:\/\//i.test(v)) err(`updates.mirrors[${i}]`, "代理站必须使用 https://");
+      if (!v) err(`updates.mirrors[${i}]`, "mirrorEmpty");
+      if (v && !/^https:\/\//i.test(v)) err(`updates.mirrors[${i}]`, "mirrorHttps");
     });
 
     // phase2/3 scalar
-    if (typeof form.traffic_logging !== "boolean") err("traffic_logging", "必须为布尔值");
+    if (typeof form.traffic_logging !== "boolean") err("traffic_logging", "bool");
     if (typeof form.diagnostics.agent_ip_probe !== "boolean") {
-      err("diagnostics.agent_ip_probe", "必须为布尔值");
+      err("diagnostics.agent_ip_probe", "bool");
     }
-    if (typeof form.child_injection !== "boolean") err("child_injection", "必须为布尔值");
+    if (typeof form.child_injection !== "boolean") err("child_injection", "bool");
 
     // child injection mode
     if (!["filtered", "inherit"].includes(form.child_injection_mode)) {
-      err("child_injection_mode", "必须为 filtered/inherit");
+      err("child_injection_mode", "mustBe", { values: "filtered/inherit" });
     }
 
     // arrays (top-level)
     form.child_injection_exclude.forEach((s, i) => {
-      if (!trim(s)) err(`child_injection_exclude[${i}]`, "不能为空");
+      if (!trim(s)) err(`child_injection_exclude[${i}]`, "empty");
     });
     form.target_processes.forEach((s, i) => {
-      if (!trim(s)) err(`target_processes[${i}]`, "不能为空");
+      if (!trim(s)) err(`target_processes[${i}]`, "empty");
     });
 
     // proxy_rules.allowed_ports
     const seenPorts = new Set();
     form.proxy_rules.allowed_ports.forEach((p, i) => {
-      if (!Number.isInteger(p) || p < 1 || p > 65535) err(`proxy_rules.allowed_ports[${i}]`, "端口必须 1-65535");
-      if (p === 0) err(`proxy_rules.allowed_ports[${i}]`, "端口不能为 0");
+      if (!Number.isInteger(p) || p < 1 || p > 65535) err(`proxy_rules.allowed_ports[${i}]`, "portRange");
+      if (p === 0) err(`proxy_rules.allowed_ports[${i}]`, "portZero");
       const key = String(p);
-      if (seenPorts.has(key)) warn(`proxy_rules.allowed_ports[${i}]`, "重复端口（后端会排序去重）");
+      if (seenPorts.has(key)) warn(`proxy_rules.allowed_ports[${i}]`, "portDup");
       seenPorts.add(key);
     });
 
     // enums
-    if (!["direct", "proxy"].includes(form.proxy_rules.dns_mode)) err("proxy_rules.dns_mode", "必须为 direct/proxy");
-    if (!["proxy", "direct", "block"].includes(form.proxy_rules.ipv6_mode)) err("proxy_rules.ipv6_mode", "必须为 proxy/direct/block");
-    if (!["auto", "block", "direct", "proxy"].includes(form.proxy_rules.udp_mode)) err("proxy_rules.udp_mode", "必须为 auto/block/direct/proxy");
-    if (!["block", "direct"].includes(form.proxy_rules.udp_fallback)) err("proxy_rules.udp_fallback", "必须为 block/direct");
+    if (!["direct", "proxy"].includes(form.proxy_rules.dns_mode)) err("proxy_rules.dns_mode", "mustBe", { values: "direct/proxy" });
+    if (!["proxy", "direct", "block"].includes(form.proxy_rules.ipv6_mode)) err("proxy_rules.ipv6_mode", "mustBe", { values: "proxy/direct/block" });
+    if (!["auto", "block", "direct", "proxy"].includes(form.proxy_rules.udp_mode)) err("proxy_rules.udp_mode", "mustBe", { values: "auto/block/direct/proxy" });
+    if (!["block", "direct"].includes(form.proxy_rules.udp_fallback)) err("proxy_rules.udp_fallback", "mustBe", { values: "block/direct" });
     if (!["auto", "proxy"].includes(form.proxy_rules.udp_mode) && form.proxy_rules.udp_fallback !== "block") {
-      warn("proxy_rules.udp_fallback", "仅 udp_mode=auto/proxy 时生效；当前该设置不会生效");
+      warn("proxy_rules.udp_fallback", "udpFallbackIgnored");
     }
     if (form.proxy_rules.udp_mode === "auto" && form.proxy.type !== "socks5") {
-      warn("proxy_rules.udp_mode", `auto 在 HTTP 代理下会按 udp_fallback=${form.proxy_rules.udp_fallback} 处理`);
+      warn("proxy_rules.udp_mode", "udpAutoHttp", { fallback: form.proxy_rules.udp_fallback });
     }
     if (form.proxy_rules.udp_mode === "proxy" && form.proxy.type !== "socks5") {
-      warn("proxy_rules.udp_mode", "proxy 模式依赖 SOCKS5 UDP Associate；当前代理类型不匹配");
+      warn("proxy_rules.udp_mode", "udpProxyNeedsSocks");
     }
 
     // routing bools
-    if (typeof form.proxy_rules.routing.enabled !== "boolean") err("proxy_rules.routing.enabled", "必须为布尔值");
-    if (typeof form.proxy_rules.routing.use_default_private !== "boolean") err("proxy_rules.routing.use_default_private", "必须为布尔值");
+    if (typeof form.proxy_rules.routing.enabled !== "boolean") err("proxy_rules.routing.enabled", "bool");
+    if (typeof form.proxy_rules.routing.use_default_private !== "boolean") err("proxy_rules.routing.use_default_private", "bool");
 
     // routing enums
-    if (!["order", "number"].includes(form.proxy_rules.routing.priority_mode)) err("proxy_rules.routing.priority_mode", "必须为 order/number");
-    if (!["proxy", "direct"].includes(form.proxy_rules.routing.default_action)) err("proxy_rules.routing.default_action", "必须为 proxy/direct");
+    if (!["order", "number"].includes(form.proxy_rules.routing.priority_mode)) err("proxy_rules.routing.priority_mode", "mustBe", { values: "order/number" });
+    if (!["proxy", "direct"].includes(form.proxy_rules.routing.default_action)) err("proxy_rules.routing.default_action", "mustBe", { values: "proxy/direct" });
 
     // routing rules
     const rules = form.proxy_rules.routing.rules || [];
     rules.forEach((r, idx) => {
       const prefix = `proxy_rules.routing.rules[${idx}]`;
-      if (!trim(r.name)) err(`${prefix}.name`, "name 不能为空");
-      if (typeof r.enabled !== "boolean") err(`${prefix}.enabled`, "enabled 必须为布尔值");
-      if (!["proxy", "direct"].includes(toLower(r.action))) err(`${prefix}.action`, "action 必须为 proxy/direct");
-      if (!Number.isInteger(r.priority)) warn(`${prefix}.priority`, "priority 建议为整数");
+      if (!trim(r.name)) err(`${prefix}.name`, "fieldEmpty", { field: "name" });
+      if (typeof r.enabled !== "boolean") err(`${prefix}.enabled`, "fieldBool", { field: "enabled" });
+      if (!["proxy", "direct"].includes(toLower(r.action))) err(`${prefix}.action`, "fieldMustBe", { field: "action", values: "proxy/direct" });
+      if (!Number.isInteger(r.priority)) warn(`${prefix}.priority`, "priorityInt");
 
       // matchable conditions
       if (!r.domains?.length && !r.ip_cidrs_v4?.length && !r.ip_cidrs_v6?.length) {
-        warn(prefix, "该规则没有 domains/CIDR 条件，可能永远无法命中");
+        warn(prefix, "ruleNoCondition");
       }
 
       (r.ip_cidrs_v4 || []).forEach((c, i) => {
         const rc = parseCidr(c, 4);
-        if (!rc.ok) err(`${prefix}.ip_cidrs_v4[${i}]`, `IPv4 CIDR 无效：${rc.reason}`);
+        if (!rc.ok) err(`${prefix}.ip_cidrs_v4[${i}]`, "ipv4Bad", { reason: why(rc) });
       });
       (r.ip_cidrs_v6 || []).forEach((c, i) => {
         const rc = parseCidr(c, 6);
-        if (!rc.ok) err(`${prefix}.ip_cidrs_v6[${i}]`, `IPv6 CIDR 无效：${rc.reason}`);
+        if (!rc.ok) err(`${prefix}.ip_cidrs_v6[${i}]`, "ipv6Bad", { reason: why(rc) });
       });
       (r.domains || []).forEach((d, i) => {
-        if (!trim(d)) err(`${prefix}.domains[${i}]`, "域名不能为空");
+        if (!trim(d)) err(`${prefix}.domains[${i}]`, "domainEmpty");
       });
       (r.ports || []).forEach((p, i) => {
         const rc = parsePortRange(p);
-        if (!rc.ok) err(`${prefix}.ports[${i}]`, `端口范围无效：${rc.reason}`);
+        if (!rc.ok) err(`${prefix}.ports[${i}]`, "portRangeBad", { reason: why(rc) });
       });
       (r.protocols || []).forEach((p, i) => {
         const s = toLower(trim(p));
-        if (!s) err(`${prefix}.protocols[${i}]`, "协议不能为空");
-        else if (s !== "tcp") warn(`${prefix}.protocols[${i}]`, "当前主要支持 tcp；其它值可能无法命中");
+        if (!s) err(`${prefix}.protocols[${i}]`, "protocolEmpty");
+        else if (s !== "tcp") warn(`${prefix}.protocols[${i}]`, "protocolTcp");
       });
     });
 
@@ -755,6 +818,7 @@
     normalizeForm,
     exportObject,
     validateForm,
+    VALIDATION_MESSAGES: VMSG,
     // io helpers
     parseJsonc,
   });

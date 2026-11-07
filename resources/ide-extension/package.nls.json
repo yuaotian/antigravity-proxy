@@ -1,0 +1,14 @@
+{
+  "description": "Visual settings panel, status bar and patch guard for Antigravity-Proxy (restores version.dll after IDE updates)",
+  "command.openSettings": "Open Proxy Settings",
+  "command.scanProxy": "Scan for Local Proxies",
+  "command.testProxy": "Test Proxy Connection",
+  "command.repairPatch": "Check and Repair Patch",
+  "command.restartIde": "Restart IDE to Apply Proxy Settings",
+  "command.openLogs": "Open Proxy Log Folder",
+  "config.language": "Display language of the extension. \"auto\" follows the IDE display language.",
+  "config.language.auto": "Follow the IDE display language",
+  "config.autoRestore": "After an IDE auto-update removes `version.dll` / `config.json`, restore them automatically at startup from the copy bundled with the extension (`config.json` is restored to your last saved settings first). Restart the IDE afterwards to apply.",
+  "config.statusBarEnabled": "Show the proxy status in the status bar (click to open proxy settings).",
+  "config.probeInterval": "Interval in seconds for the status bar proxy port check; 0 checks only at startup and after saving."
+}

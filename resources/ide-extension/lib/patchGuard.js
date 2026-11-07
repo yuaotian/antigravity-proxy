@@ -16,6 +16,10 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { isDllLoadedInThisProcess, statOrNull } = require("./installInfo");
+const I18n = require("../media/i18n");
+
+// 未传入翻译函数时使用简体中文
+const DEFAULT_T = I18n.createT("zh-cn");
 
 /**
  * @typedef {Object} PatchStatus
@@ -32,8 +36,10 @@ class PatchGuard {
    * @param {import("./installInfo").InstallInfo} info
    * @param {import("./configStore").ConfigStore} store
    * @param {string} extensionPath
+   * @param {(key: string, params?: Record<string, any>) => string} [t] 翻译函数（随界面语言切换）
    */
-  constructor(info, store, extensionPath) {
+  constructor(info, store, extensionPath, t = DEFAULT_T) {
+    this.t = t;
     this.info = info;
     this.store = store;
     this.payloadDir = path.join(extensionPath, "payload");
@@ -71,10 +77,10 @@ class PatchGuard {
     try {
       if (!statOrNull(this.info.dllPath)) {
         if (!statOrNull(this.payloadDll)) {
-          return { ok: false, restored, error: "插件未携带 version.dll（开发版插件或打包不完整），请重新安装发布包中的插件。" };
+          return { ok: false, restored, error: this.t("guard.noPayload") };
         }
-        atomicCopy(this.payloadDll, this.info.dllPath);
-        restored.push("version.dll");
+        atomicCopy(this.payloadDll, this.info.dllPath, this.t);
+        restored.push(this.t("ext.restoredDll"));
       }
       if (!statOrNull(this.info.configPath)) {
         const lastGood = this.store.loadLastGood();
@@ -83,10 +89,10 @@ class PatchGuard {
           const tmp = `${this.info.configPath}.agp-${process.pid}-${Date.now()}.tmp`;
           fs.writeFileSync(tmp, JSON.stringify(lastGood, null, 2) + "\n", "utf8");
           fs.renameSync(tmp, this.info.configPath);
-          restored.push("config.json（你上次的配置）");
+          restored.push(this.t("ext.restoredConfigLastGood"));
         } else if (statOrNull(this.payloadConfig)) {
-          atomicCopy(this.payloadConfig, this.info.configPath);
-          restored.push("config.json（默认模板）");
+          atomicCopy(this.payloadConfig, this.info.configPath, this.t);
+          restored.push(this.t("ext.restoredConfigDefault"));
         }
       }
       return { ok: true, restored };
@@ -97,7 +103,7 @@ class PatchGuard {
         ok: false,
         restored,
         error: perm
-          ? `没有写入权限：${this.info.installDir}。若 IDE 安装在 Program Files，请以管理员身份运行 IDE 后执行“检查并修复补丁”。`
+          ? this.t("guard.noPermission", { dir: this.info.installDir })
           : `${err.code || "ERROR"}: ${err.message}`,
       };
     }
@@ -107,12 +113,13 @@ class PatchGuard {
 /**
  * 临时文件 + rename 的原子复制，并校验 SHA256，避免半写入的 DLL 导致 IDE 无法启动。
  * @param {string} src @param {string} dst
+ * @param {(key: string) => string} [t] 翻译函数
  */
-function atomicCopy(src, dst) {
+function atomicCopy(src, dst, t = DEFAULT_T) {
   const tmp = `${dst}.agp-${process.pid}-${Date.now()}.tmp`;
   fs.copyFileSync(src, tmp);
   try {
-    if (sha256OrUndefined(src) !== sha256OrUndefined(tmp)) throw new Error("复制后 SHA256 校验不一致");
+    if (sha256OrUndefined(src) !== sha256OrUndefined(tmp)) throw new Error(t("guard.shaMismatch"));
     fs.renameSync(tmp, dst);
   } catch (e) {
     try { fs.unlinkSync(tmp); } catch { /* 忽略清理失败 */ }

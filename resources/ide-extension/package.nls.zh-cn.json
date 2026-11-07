@@ -1,0 +1,14 @@
+{
+  "description": "Antigravity-Proxy 可视化配置面板、状态栏与补丁守护（IDE 更新后自动恢复 version.dll）",
+  "command.openSettings": "打开代理设置",
+  "command.scanProxy": "扫描本机代理",
+  "command.testProxy": "测试代理连接",
+  "command.repairPatch": "检查并修复补丁",
+  "command.restartIde": "重启 IDE 使代理配置生效",
+  "command.openLogs": "打开代理日志目录",
+  "config.language": "插件界面语言；auto 表示跟随 IDE 显示语言。",
+  "config.language.auto": "跟随 IDE 显示语言",
+  "config.autoRestore": "IDE 自动更新清除 `version.dll` / `config.json` 后，启动时自动从插件内置副本恢复（`config.json` 优先恢复为你上次的配置）。恢复后需重启 IDE 生效。",
+  "config.statusBarEnabled": "在底部状态栏显示代理状态（点击打开代理设置）。",
+  "config.probeInterval": "状态栏代理端口连通性检测间隔（秒）；0 表示仅在启动与保存后检测。"
+}
