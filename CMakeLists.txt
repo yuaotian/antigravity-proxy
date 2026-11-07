@@ -222,6 +222,15 @@ if(BUILD_TESTS)
   )
   add_test(NAME udp_policy_tests COMMAND udp_policy_tests)
 
+  # SOCKS5 UDP ASSOCIATE 失败退避（代理未开启 UDP 时避免逐 socket 重复握手）
+  add_executable(udp_associate_backoff_tests
+    "tests/test_udp_associate_backoff.cpp"
+  )
+  target_include_directories(udp_associate_backoff_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+  add_test(NAME udp_associate_backoff_tests COMMAND udp_associate_backoff_tests)
+
   add_executable(socket_family_tests
     "tests/test_socket_family.cpp"
   )

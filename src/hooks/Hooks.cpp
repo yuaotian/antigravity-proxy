@@ -26,6 +26,7 @@
 #include "../network/FakeIP.hpp"
 #include "../network/Socks5.hpp"
 #include "../network/Socks5Udp.hpp"
+#include "../network/UdpAssociateBackoff.hpp"
 #include "../network/HttpConnect.hpp"
 #include "../network/SocketIo.hpp"
 #include "../network/SocketFamily.hpp"
@@ -1493,6 +1494,19 @@ static void CleanupUdpProxyContext(SOCKET s) {
     CleanupUdpOverlappedBySocket(s);
 }
 
+// 进程级 UDP ASSOCIATE 失败退避：代理未开启 UDP 时 60 秒内不再重复尝试（见 UdpAssociateBackoff.hpp）
+static Network::UdpAssociateBackoff g_udpAssociateBackoff;
+
+// 记录 ASSOCIATE 失败；每个退避窗口只输出一次可操作的提示，替代逐个 socket 的重复错误
+static void NoteUdpAssociateUnavailable(const char* reason) {
+    if (!g_udpAssociateBackoff.RecordFailure(GetTickCount64())) return;
+    const auto& config = Core::Config::Instance();
+    Core::Logger::Warn(std::string("SOCKS5 UDP 不可用（") + reason + "）：60 秒内不再尝试，UDP 按 udp_fallback=" +
+                       config.rules.udp_fallback + " 处理（QUIC/HTTP3 会自动回退到 TCP，不影响正常使用）。" +
+                       "如需 UDP，请在代理软件中开启 SOCKS5 的 UDP 支持（例如 v2rayN 入站的「启用 UDP」），" +
+                       "或把 proxy_rules.udp_mode 设为 block 关闭 UDP 代理尝试。");
+}
+
 static bool EnsureUdpProxyReady(
     SOCKET udpSock,
     int socketFamily,
@@ -1537,12 +1551,20 @@ static bool EnsureUdpProxyReady(
     }
 
     if (needCreateContext) {
+        // 退避期内（代理刚确认不支持 UDP）直接失败，交给调用方按 udp_fallback 处理，不再重复握手与刷日志
+        const ULONGLONG nowTick = GetTickCount64();
+        if (g_udpAssociateBackoff.ShouldSkip(nowTick)) {
+            WSASetLastError(WSAECONNREFUSED);
+            return false;
+        }
+
         UdpProxyContext created{};
         created.udpSock = udpSock;
-        created.createdTick = GetTickCount64();
+        created.createdTick = nowTick;
 
         SOCKET tcp = ConnectTcpToProxyServer(config.proxy);
         if (tcp == INVALID_SOCKET) {
+            NoteUdpAssociateUnavailable("无法连接代理服务器");
             WSASetLastError(WSAECONNREFUSED);
             return false;
         }
@@ -1551,9 +1573,11 @@ static bool EnsureUdpProxyReady(
         if (!Network::Socks5Udp::UdpAssociate(tcp, nullptr, 0, &assoc)) {
             if (fpCloseSocket) fpCloseSocket(tcp);
             else closesocket(tcp);
+            NoteUdpAssociateUnavailable("代理拒绝或不支持 UDP ASSOCIATE");
             WSASetLastError(WSAECONNREFUSED);
             return false;
         }
+        g_udpAssociateBackoff.RecordSuccess();
 
         created.controlSock = tcp;
         created.relayAddr = assoc.relayAddr;
@@ -1927,6 +1951,36 @@ static bool TryResolveDirectTargetFromFakeIp(const sockaddr* name, const std::st
     }
 
     return false;
+}
+
+// FakeIP 只在启用代理时分配：proxy.port=0（全部直连）时分配虚拟地址，后续直连会连到 198.18.x.x 而必然失败
+static bool ShouldAllocFakeIp(const Core::Config& config) {
+    return config.fakeIp.enabled && config.proxy.port != 0;
+}
+
+// 直连前还原 FakeIP：路由 direct / DNS 直连 / 端口白名单外直连共用。
+// getaddrinfo 阶段不知道最终走代理还是直连，域名一律拿到虚拟地址；直连时必须按原域名重解析为真实地址。
+// 返回实际应连接的地址：重解析成功时指向 storage（长度写入 outLen），否则原样返回 name
+static const sockaddr* ResolveDirectTarget(const sockaddr* name, int namelen, const std::string& host, uint16_t port,
+                                           const char* reason, sockaddr_storage* storage, int* outLen) {
+    *outLen = namelen;
+    int realLen = 0;
+    bool wasFake = false;
+    if (TryResolveDirectTargetFromFakeIp(name, host, port, storage, &realLen, &wasFake)) {
+        if (ShouldLogRouteDecisionInfo()) {
+            const std::string dst = SockaddrToString((const sockaddr*)storage);
+            Core::Logger::Info(std::string(reason) + ": FakeIP 已重解析直连" +
+                               (dst.empty() ? std::string("") : (", addr=" + dst)) +
+                               ", target=" + host + ":" + std::to_string(port));
+        }
+        *outLen = realLen;
+        return (const sockaddr*)storage;
+    }
+    if (wasFake) {
+        Core::Logger::Warn(std::string(reason) + ": 目标为 FakeIP 但重解析失败，回退原始直连(可能失败), target=" +
+                           host + ":" + std::to_string(port));
+    }
+    return name;
 }
 
 static bool DoProxyHandshake(SOCKET s, const std::string& host, uint16_t port) {
@@ -2587,25 +2641,12 @@ int PerformProxyConnect(SOCKET s, const struct sockaddr* name, int namelen, bool
                                ", target=" + originalHost + ":" + std::to_string(originalPort));
         }
         // CRIT-3: 若底层 sockaddr 仍为 FakeIP，则 direct 直连必失败；这里做兜底重解析
-        sockaddr_storage realAddr{};
-        int realLen = 0;
-        bool wasFake = false;
-        if (TryResolveDirectTargetFromFakeIp(name, originalHost, originalPort, &realAddr, &realLen, &wasFake)) {
-            const std::string dst = SockaddrToString((sockaddr*)&realAddr);
-            if (ShouldLogRouteDecisionInfo()) {
-                Core::Logger::Info("[Route] direct: FakeIP 已重解析直连" +
-                                   (dst.empty() ? std::string("") : (", addr=" + dst)) +
-                                   ", target=" + originalHost + ":" + std::to_string(originalPort));
-            }
-            return isWsa ? fpWSAConnect(s, (sockaddr*)&realAddr, realLen, NULL, NULL, NULL, NULL)
-                         : fpConnect(s, (sockaddr*)&realAddr, realLen);
-        }
-        if (wasFake) {
-            Core::Logger::Warn("[Route] direct: 目标为 FakeIP 但重解析失败，回退原始直连(可能失败), target=" +
-                               originalHost + ":" + std::to_string(originalPort));
-        }
-        return isWsa ? fpWSAConnect(s, name, namelen, NULL, NULL, NULL, NULL)
-                     : fpConnect(s, name, namelen);
+        sockaddr_storage directAddr{};
+        int directLen = 0;
+        const sockaddr* direct = ResolveDirectTarget(name, namelen, originalHost, originalPort, "[Route] direct",
+                                                     &directAddr, &directLen);
+        return isWsa ? fpWSAConnect(s, direct, directLen, NULL, NULL, NULL, NULL)
+                     : fpConnect(s, direct, directLen);
     } else if (routeMatched) {
         if (ShouldLogRouteDecisionInfo()) {
             Core::Logger::Info("[Route] proxy rule=" + routeRule +
@@ -2621,8 +2662,13 @@ int PerformProxyConnect(SOCKET s, const struct sockaddr* name, int namelen, bool
                 Core::Logger::Info("DNS 请求直连 (策略: direct), sock=" + std::to_string((unsigned long long)s) +
                                    ", 目标: " + originalHost + ":53");
             }
-            return isWsa ? fpWSAConnect(s, name, namelen, NULL, NULL, NULL, NULL) 
-                         : fpConnect(s, name, namelen);
+            // 以域名指定的 DNS 服务器（如 dns.google:53）同样拿到的是 FakeIP，直连前需还原
+            sockaddr_storage directAddr{};
+            int directLen = 0;
+            const sockaddr* direct = ResolveDirectTarget(name, namelen, originalHost, originalPort, "DNS 直连",
+                                                         &directAddr, &directLen);
+            return isWsa ? fpWSAConnect(s, direct, directLen, NULL, NULL, NULL, NULL)
+                         : fpConnect(s, direct, directLen);
         }
         // dns_mode == "proxy" 则继续走后面的代理逻辑
         if (ShouldLogRouteDecisionInfo()) {
@@ -2637,8 +2683,13 @@ int PerformProxyConnect(SOCKET s, const struct sockaddr* name, int namelen, bool
             Core::Logger::Info("端口 " + std::to_string(originalPort) + " 不在白名单, sock=" + std::to_string((unsigned long long)s) +
                                ", 直连: " + originalHost);
         }
-        return isWsa ? fpWSAConnect(s, name, namelen, NULL, NULL, NULL, NULL) 
-                     : fpConnect(s, name, namelen);
+        // 域名连接（如 node 扩展宿主连 MCP 服务 / 数据库的 8080、5432 端口）此时持有的是 FakeIP，直连前需还原
+        sockaddr_storage directAddr{};
+        int directLen = 0;
+        const sockaddr* direct = ResolveDirectTarget(name, namelen, originalHost, originalPort, "端口白名单外直连",
+                                                     &directAddr, &directLen);
+        return isWsa ? fpWSAConnect(s, direct, directLen, NULL, NULL, NULL, NULL)
+                     : fpConnect(s, direct, directLen);
     }
     
     // 如果配置了代理
@@ -2867,7 +2918,8 @@ int WSAAPI DetourGetAddrInfo(PCSTR pNodeName, PCSTR pServiceName,
     if (!fpGetAddrInfo) return EAI_FAIL;
 
     // 如果启用了 FakeIP 且有域名请求
-    if (pNodeName && config.fakeIp.enabled) {
+    // FakeIP 只在启用代理时分配（见 ShouldAllocFakeIp）
+    if (pNodeName && ShouldAllocFakeIp(config)) {
         std::string node = pNodeName;
         std::string routeAction;
         std::string routeRule;
@@ -2925,7 +2977,8 @@ int WSAAPI DetourGetAddrInfoW(PCWSTR pNodeName, PCWSTR pServiceName,
     if (!fpGetAddrInfoW) return EAI_FAIL;
 
     // 如果启用了 FakeIP 且有域名请求
-    if (pNodeName && config.fakeIp.enabled) {
+    // FakeIP 只在启用代理时分配（见 ShouldAllocFakeIp）
+    if (pNodeName && ShouldAllocFakeIp(config)) {
         std::string nodeUtf8 = WideToUtf8(pNodeName);
         std::string routeAction;
         std::string routeRule;
@@ -2980,7 +3033,8 @@ struct hostent* WSAAPI DetourGetHostByName(const char* name) {
     auto& config = Core::Config::Instance();
     if (!fpGetHostByName) return NULL;
 
-    if (name && config.fakeIp.enabled) {
+    // FakeIP 只在启用代理时分配（见 ShouldAllocFakeIp）
+    if (name && ShouldAllocFakeIp(config)) {
         std::string node = name;
         std::string routeAction;
         std::string routeRule;
@@ -3421,23 +3475,11 @@ BOOL PASCAL DetourConnectEx(
                                ", target=" + originalHost + ":" + std::to_string(originalPort));
         }
         // CRIT-3: direct + FakeIP 兜底重解析，避免“直连虚拟地址”必失败
-        sockaddr_storage realAddr{};
-        int realLen = 0;
-        bool wasFake = false;
-        if (TryResolveDirectTargetFromFakeIp(name, originalHost, originalPort, &realAddr, &realLen, &wasFake)) {
-            const std::string dst = SockaddrToString((sockaddr*)&realAddr);
-            if (ShouldLogRouteDecisionInfo()) {
-                Core::Logger::Info("[Route] direct: FakeIP 已重解析直连(ConnectEx)" +
-                                   (dst.empty() ? std::string("") : (", addr=" + dst)) +
-                                   ", target=" + originalHost + ":" + std::to_string(originalPort));
-            }
-            return originalConnectEx(s, (sockaddr*)&realAddr, realLen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
-        }
-        if (wasFake) {
-            Core::Logger::Warn("[Route] direct: 目标为 FakeIP 但重解析失败，回退原始直连(ConnectEx, 可能失败), target=" +
-                               originalHost + ":" + std::to_string(originalPort));
-        }
-        return originalConnectEx(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
+        sockaddr_storage directAddr{};
+        int directLen = 0;
+        const sockaddr* direct = ResolveDirectTarget(name, namelen, originalHost, originalPort, "[Route] direct(ConnectEx)",
+                                                     &directAddr, &directLen);
+        return originalConnectEx(s, direct, directLen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
     } else if (routeMatched) {
         if (ShouldLogRouteDecisionInfo()) {
             Core::Logger::Info("[Route] proxy rule=" + routeRule +
@@ -3457,7 +3499,12 @@ BOOL PASCAL DetourConnectEx(
                 Core::Logger::Info("ConnectEx DNS 请求直连 (策略: direct), sock=" + std::to_string((unsigned long long)s) +
                                    ", 目标: " + originalHost + ":53");
             }
-            return originalConnectEx(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
+            // 与 connect 路径一致：域名形式的 DNS 服务器持有 FakeIP，直连前还原
+            sockaddr_storage directAddr{};
+            int directLen = 0;
+            const sockaddr* direct = ResolveDirectTarget(name, namelen, originalHost, originalPort, "ConnectEx DNS 直连",
+                                                         &directAddr, &directLen);
+            return originalConnectEx(s, direct, directLen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
         }
         // dns_mode == "proxy" 则继续走后面的代理逻辑
         if (ShouldLogRouteDecisionInfo()) {
@@ -3472,7 +3519,12 @@ BOOL PASCAL DetourConnectEx(
             Core::Logger::Info("ConnectEx 端口 " + std::to_string(originalPort) + " 不在白名单, sock=" + std::to_string((unsigned long long)s) +
                                ", 直连: " + originalHost);
         }
-        return originalConnectEx(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
+        // 与 connect 路径一致：白名单外端口的域名连接持有 FakeIP，直连前还原
+        sockaddr_storage directAddr{};
+        int directLen = 0;
+        const sockaddr* direct = ResolveDirectTarget(name, namelen, originalHost, originalPort, "ConnectEx 端口白名单外直连",
+                                                     &directAddr, &directLen);
+        return originalConnectEx(s, direct, directLen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
     }
     
     if (ShouldLogRouteDecisionInfo()) {

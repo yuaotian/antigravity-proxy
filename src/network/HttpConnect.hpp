@@ -156,7 +156,8 @@ namespace Network {
                     Core::Logger::Error("HTTP CONNECT: 响应头过长或不完整, sock=" + std::to_string((unsigned long long)sock));
                 }
                 Core::Logger::Error("HTTP CONNECT: 接收响应失败, sock=" + std::to_string((unsigned long long)sock) +
-                                    ", WSA错误码=" + std::to_string(err));
+                                    ", WSA错误码=" + std::to_string(err) + MismatchHint(response, err));
+                WSASetLastError(err);
                 return false;
             }
             if (Core::Logger::IsEnabled(Core::LogLevel::Debug)) {
@@ -169,7 +170,7 @@ namespace Network {
             int statusCode = ParseStatusCode(response);
             if (statusCode == -1) {
                 Core::Logger::Error("HTTP CONNECT: 解析响应状态码失败, sock=" + std::to_string((unsigned long long)sock) +
-                                    ", line=\"" + FirstLine(response) + "\"");
+                                    ", line=\"" + FirstLine(response) + "\"" + MismatchHint(response, 0));
                 Core::Logger::Error("HTTP CONNECT: 响应内容(前256B): " + response.substr(0, 256));
                 Core::Logger::Error("HTTP CONNECT: 响应摘要(hex前64B): " +
                                     HexDump((const uint8_t*)response.data(), response.size(), 64));
@@ -198,6 +199,19 @@ namespace Network {
         }
         
     private:
+        // 协议错配提示：把 http 配到了 SOCKS5 端口时，SOCKS5 服务端会按版本号 0x05 应答或直接断开 / 不应答
+        static std::string MismatchHint(const std::string& response, int err) {
+            const bool socksReply = !response.empty() && static_cast<uint8_t>(response[0]) == 0x05;
+            if (socksReply) {
+                return "（该端口按 SOCKS5 协议应答，是 SOCKS5 端口：请把 proxy.type 改为 socks5）";
+            }
+            if (err == WSAETIMEDOUT || err == WSAECONNRESET) {
+                return "（提示：代理收到 HTTP CONNECT 后断开或无应答，该端口可能是 SOCKS5 端口：请把 proxy.type 改为 socks5，"
+                       "或改用代理软件的 HTTP / 混合端口）";
+            }
+            return "";
+        }
+
         static int NormalizeTimeoutMs(int timeoutMs) {
             return timeoutMs > 0 ? timeoutMs : 5000;
         }

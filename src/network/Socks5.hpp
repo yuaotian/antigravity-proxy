@@ -86,6 +86,14 @@ namespace Network {
             }
         }
 
+        // 协议错配提示：用户最常见的问题是把 SOCKS5 配到了 HTTP 端口（如 v2rayN 10809、Privoxy 8118）。
+        // HTTP 代理收到 SOCKS5 问候后要么等待请求行直到超时，要么直接断开，要么回 "HTTP/1.x 400"。
+        static std::string MismatchHintForError(int err) {
+            if (err != WSAETIMEDOUT && err != WSAECONNRESET) return "";
+            return "（提示：代理未按 SOCKS5 应答，该端口可能是 HTTP 代理端口：请把 proxy.type 改为 http，"
+                   "或改用代理软件的 SOCKS5 / 混合端口）";
+        }
+
         // Helper to ensure exact number of bytes are read (handles TCP fragmentation)
         static bool ReadExact(SOCKET sock, uint8_t* buf, int len, int timeoutMs) {
             // 使用统一的 IO 封装，兼容非阻塞套接字
@@ -131,7 +139,8 @@ namespace Network {
                 int err = WSAGetLastError();
                 Core::Logger::Error(std::string(logPrefix) + ": [1/3] 读取认证响应失败, sock=" +
                                     std::to_string((unsigned long long)sock) +
-                                    ", WSA错误码=" + std::to_string(err));
+                                    ", WSA错误码=" + std::to_string(err) + MismatchHintForError(err));
+                WSASetLastError(err);
                 return false;
             }
 
@@ -144,9 +153,14 @@ namespace Network {
             }
 
             if (authResponse[0] != Socks5::VERSION) {
+                // 首字节为 'H'（0x48）说明对端回的是 "HTTP/1.x ..."，即该端口是 HTTP 代理
+                const bool looksHttp = authResponse[0] == 'H';
                 Core::Logger::Error(std::string(logPrefix) + ": [1/3] 认证响应协议版本无效, sock=" +
                                     std::to_string((unsigned long long)sock) +
-                                    ", 版本=" + std::to_string(authResponse[0]));
+                                    ", 版本=" + std::to_string(authResponse[0]) +
+                                    (looksHttp ? "（该端口返回了 HTTP 响应，是 HTTP 代理端口：请把 proxy.type 改为 http，"
+                                                 "或改用代理软件的 SOCKS5 / 混合端口）"
+                                               : ""));
                 return false;
             }
 
