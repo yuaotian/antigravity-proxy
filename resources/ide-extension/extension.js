@@ -24,6 +24,7 @@ const { ConfigPanel } = require("./lib/configPanel");
 const { probeProxy } = require("./lib/proxyProbe");
 const { scanLocalProxies } = require("./lib/proxyScan");
 const { restartIde } = require("./lib/restart");
+const { findMissingTargets, withTargetsAdded } = require("./lib/configHealth");
 
 const CONFIG_SECTION = "antigravityProxy";
 // 首次引导只执行一次（全局状态，不随工作区变化）
@@ -86,7 +87,29 @@ function activate(context) {
       proxy,
       reach: proxy && proxy.port > 0 ? lastReach : null,
       pendingRestart: isPendingRestart(),
+      missingTargets: read.status === "ok" ? findMissingTargets(read.raw) : [],
     });
+  };
+
+  /** 状态栏悬浮提示「一键补齐」：把缺少的后端进程写入 target_processes（写前自动备份），提示重启生效 */
+  const fixTargets = async () => {
+    const read = store.read();
+    if (read.status !== "ok") return;
+    const missing = findMissingTargets(read.raw);
+    if (missing.length === 0) return;
+    const r = store.write(withTargetsAdded(read.raw, missing));
+    if (!r.ok) {
+      void vscode.window.showErrorMessage(tr("ext.targetsFixFailed", { error: r.error }));
+      return;
+    }
+    sessionPendingRestart = true;
+    await refresh();
+    ConfigPanel.refreshIfOpen();
+    const pick = await vscode.window.showInformationMessage(
+      tr("ext.targetsFixed", { names: missing.join(", ") }),
+      tr("common.restartNow"),
+    );
+    if (pick === tr("common.restartNow")) await restart();
   };
 
   const restart = () => restartIde(vscode, info.exePath, tr);
@@ -150,6 +173,8 @@ function activate(context) {
     vscode.commands.registerCommand(`${CONFIG_SECTION}.scanProxy`, () => ConfigPanel.show(panelDeps(), { intent: "scan" })),
     vscode.commands.registerCommand(`${CONFIG_SECTION}.restartIde`, restart),
     vscode.commands.registerCommand(`${CONFIG_SECTION}.repairPatch`, () => repair()),
+    // 仅供状态栏悬浮提示链接调用（未在 package.json 声明，不出现在命令面板）
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.fixTargets`, fixTargets),
     vscode.commands.registerCommand(`${CONFIG_SECTION}.openLogs`, async () => {
       if (fs.existsSync(info.logsDir)) await vscode.env.openExternal(vscode.Uri.file(info.logsDir));
       else void vscode.window.showWarningMessage(tr("ext.logsNotFound", { path: info.logsDir }));

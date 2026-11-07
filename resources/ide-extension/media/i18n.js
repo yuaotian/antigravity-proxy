@@ -31,6 +31,8 @@
     "ext.repairRestored": ["已恢复代理补丁：{files}。重启 IDE 后代理生效。", "Proxy patch restored: {files}. Restart the IDE to apply the proxy.", "Патч прокси восстановлен: {files}. Перезапустите IDE, чтобы прокси заработал."],
     "ext.repairNotLoaded": ["补丁文件完整，但当前 IDE 进程尚未加载，重启后生效。", "Patch files are in place but not loaded by this IDE process yet. Restart to apply.", "Файлы патча на месте, но ещё не загружены текущим процессом IDE. Перезапустите IDE."],
     "ext.repairAllGood": ["代理补丁完整，且已在当前 IDE 中生效。", "The proxy patch is intact and active in this IDE.", "Патч прокси на месте и активен в этой IDE."],
+    "ext.targetsFixed": ["已在 target_processes 中补齐 {names}（已备份旧配置），重启 IDE 后生效。", "Added {names} to target_processes (old config backed up). Restart the IDE to apply.", "{names} добавлен в target_processes (старая конфигурация сохранена). Перезапустите IDE, чтобы применить."],
+    "ext.targetsFixFailed": ["补齐失败：{error}", "Could not update the config: {error}", "Не удалось обновить конфигурацию: {error}"],
     "ext.logsNotFound": ["日志目录尚未生成：{path}", "Log folder does not exist yet: {path}", "Папка журналов ещё не создана: {path}"],
     "ext.testConfigBad": ["config.json 缺失或无法解析，请先在代理设置中修复。", "config.json is missing or invalid. Fix it in the proxy settings first.", "config.json отсутствует или повреждён. Сначала исправьте его в настройках прокси."],
     "ext.testProgress": ["正在测试代理 {url} …", "Testing proxy {url}…", "Проверка прокси {url}…"],
@@ -85,6 +87,10 @@
     "sb.linkTest": ["测试连接", "Test connection", "Проверить"],
     "sb.linkRepair": ["修复补丁", "Repair patch", "Восстановить патч"],
     "sb.linkRestart": ["重启 IDE", "Restart IDE", "Перезапустить IDE"],
+    // 配置缺少 IDE 后端进程（agy.exe）时的轻提示：只在状态栏显示，不弹窗
+    "sb.targetsMissing": ["代理 · 缺少 {names}", "Proxy · missing {names}", "Прокси · нет {names}"],
+    "sb.targetsMissingSummary": ["target_processes 缺少 {names}，IDE 后端不会走代理。可在悬浮提示中一键补齐。", "target_processes is missing {names}, so the IDE backend bypasses the proxy. Use \"Add missing\" in this tooltip.", "В target_processes нет {names}, поэтому бэкенд IDE идёт мимо прокси. Нажмите «Добавить» в этой подсказке."],
+    "sb.linkFixTargets": ["一键补齐", "Add missing", "Добавить"],
 
     // ---------------- 面板宿主 ----------------
     "host.panelTitle": ["代理设置", "Proxy Settings", "Настройки прокси"],
