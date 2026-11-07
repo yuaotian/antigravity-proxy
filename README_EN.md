@@ -263,6 +263,28 @@ If you are migrating an old `config.json`, make sure `child_injection` is still 
 
 Antigravity updates may clean injected files from the install directory. If proxying stops after an update, copy the files again. If your proxy client separates mixed-port and SOCKS5 ports, make sure `proxy.type` and `proxy.port` match the actual local listener.
 
+#### Prefer not to hunt for folders? Use `doctor.ps1`
+
+Both first-time deployment and "it broke after an update" can be handled by one script,
+so you do not have to locate the install folder, compare PE architectures or reconfigure ports by hand:
+
+```powershell
+# Read-only health check: patch present? loaded by the process? proxy port reachable? which layer failed?
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1
+
+# First-time deploy: discovers the install directory and probes local proxy ports
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1 -Action Setup -ProxyPort 7897
+
+# Fix after an update: restores missing files from a master copy kept outside the install directory
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1 -Action Repair
+```
+
+Inside the release archive you can just double-click `doctor.bat`. **Keep the extracted release
+outside the install directory** (for example `%LOCALAPPDATA%\antigravity-proxy\`) so it survives
+as a recovery source — a copy kept inside the install directory gets deleted together with the
+patch on the next update. After the first successful deploy the script remembers the location,
+so later `-Action Repair` runs need no arguments. See `docs/doctor.md` (Chinese) for details.
+
 More field notes: `docs/antigravity-2.0-issue-85.md`.
 
 #### Common Windows Path + Quick Jump
@@ -296,6 +318,22 @@ After that: PowerShell `cd $env:ANTIGRAVITY_HOME`, CMD `cd /d %ANTIGRAVITY_HOME%
 ## 🔧 Troubleshooting Guide
 
 > Proxy not working? Follow this guide to diagnose and fix the issue.
+
+### 🤖 Step 0: Run `doctor.ps1` first
+
+Everything below (patch present, loaded by the process, proxy port reachable, which layer failed)
+is already automated by `scripts\doctor.ps1`, which also prints the next action per finding code:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1        # read-only health check
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1 -Json  # machine-readable output
+```
+
+It is especially good at this class of failure: **the home page stays blank after an update and
+`main.log` reports `Failed to load URL: https://127.0.0.1:<port>/ ERR_TIMED_OUT`**. The local port
+itself is fine; the real cause is that the silent updater removed `version.dll` / `config.json`,
+so the Go backend falls back to dialing Google directly. When the report says `PatchMissing`,
+run `-Action Repair`. Finding-code meanings and design boundaries are documented in `docs/doctor.md`.
 
 ### 📋 Quick Diagnostic Flowchart
 

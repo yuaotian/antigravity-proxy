@@ -270,6 +270,25 @@ Antigravity 2.0 新增/改名了关键进程，默认配置已覆盖：
 
 Antigravity 更新后可能清理安装目录里的劫持文件；如果更新后不走代理，请重新复制这些文件。若代理软件区分 mixed-port 和 SOCKS5 端口，也要确认 `proxy.type` 和 `proxy.port` 匹配本机实际监听端口。
 
+#### 不想记目录？用 `doctor.ps1` 一键部署与修复
+
+首次部署和"更新后失效"都可以交给脚本，不用手工找目录、比对架构或重配端口：
+
+```powershell
+# 体检（只读）：补丁在不在、有没有被进程加载、代理端口通不通、日志说明哪一层出了问题
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1
+
+# 首次部署：自动发现安装目录并探测本机代理端口
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1 -Action Setup -ProxyPort 7897
+
+# 更新后修复：从安装目录之外的母本补回缺失文件，保留你已配好的 config.json
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1 -Action Repair
+```
+
+发布包内直接双击 `doctor.bat` 即可体检。**请把发布包解压到安装目录之外**（例如
+`%LOCALAPPDATA%\antigravity-proxy\`）作为长期恢复源——放在安装目录里的那份会和补丁一起被更新删掉。
+首次部署成功后脚本会记住母本位置，之后 `-Action Repair` 不再需要带参数。详见 `docs/doctor.md`。
+
 更多现场记录见 `docs/antigravity-2.0-issue-85.md`。
 
 #### Windows 常见目录 + 快速跳转
@@ -302,6 +321,21 @@ setx ANTIGRAVITY_HOME "%LOCALAPPDATA%\Programs\Antigravity"
 ## 🔧 故障排查自查手册 / Troubleshooting Guide
 
 > 代理不工作？按照本手册逐步排查，找到问题根源。
+
+### 🤖 第零步：先跑一次 `doctor.ps1`
+
+本手册下面的检查项（补丁在不在、进程有没有加载、代理端口通不通、日志走到哪一层失败）
+`scripts\doctor.ps1` 已经全部自动化了，并会按判定码直接给出下一步动作：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1        # 只读体检
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor.ps1 -Json  # 机器可读输出
+```
+
+它尤其擅长识别这一类问题：**更新后主页白屏、`main.log` 报
+`Failed to load URL: https://127.0.0.1:<port>/ ERR_TIMED_OUT`**（本地端口本身可用，
+真实原因是安装目录里的 `version.dll` / `config.json` 被自更新清掉，Go 后端退回直连 Google）。
+体检输出为 `PatchMissing` 时执行 `-Action Repair` 即可补回。判定码含义与边界说明见 `docs/doctor.md`。
 
 ### 📋 快速诊断流程图
 
