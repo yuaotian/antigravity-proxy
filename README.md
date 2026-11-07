@@ -223,14 +223,26 @@ curl -x http://127.0.0.1:7890 https://www.google.com -I
 
 ### Step 2: 准备文件 / Get the Files
 
-Release 按架构和运行目标提供四个独立压缩包，下载时只选实际使用的一套：
-- `antigravity-proxy-vX-ide-win-x64.zip` / `...-x86.zip`：包含 `ide/`（`version.dll`、`config.json`）。
-- `antigravity-proxy-vX-cli-win-x64.zip` / `...-x86.zip`：包含 `cli/`（`dbghelp.dll`、`antigravity_proxy.dll`、`config.json`）。
+Release 按架构和运行目标提供独立的压缩包，下载时请根据实际使用场景选择：
+- 🌟 **【推荐】桌面客户端（IDE 界面，适合 99% 的普通用户）**：
+  - `antigravity-proxy-vX-ide-win-x64.zip` / `...-x86.zip`：包含 `ide/`（`version.dll`、`config.json`），专用于日常写代码的图形客户端 `Antigravity.exe`。
+- 💻 **终端命令行（CLI 工具，仅限在终端执行 `agy` 命令的高级开发者）**：
+  - `antigravity-proxy-vX-cli-win-x64.zip` / `...-x86.zip`：包含 `cli/`（`dbghelp.dll`、`antigravity_proxy.dll`、`config.json`），专用于终端命令行工具 `agy.exe`。
 
 每个压缩包还包含通用的 `config-web.html` 与 `使用说明.md`；自行编译时仍会在本地 `output/ide`、`output/cli` 生成两套目录。
 
 ### Step 3: 部署到 Antigravity / Deploy to Antigravity
 
+#### 方式 A：一键智能向导与防更新覆盖守护（推荐 ⭐）
+- **Windows 用户**：解压 Release 压缩包后直接双击根目录的 `setup.bat` 启动向导：
+  - **防更新覆盖与独立入口**：在桌面和开始菜单创建独立入口「**Antigravity (代理)**」，与官方入口安全共存，不受 Squirrel 更新器覆盖重置影响。启动时毫秒级自动补回被更新抹除的补丁。
+  - **配置安全保护**：用户自定义的代理端口与认证配置受严格保护，更新或自愈时绝不覆盖已有运行态配置。
+  - **智能感知与三语支持**：自动适配中文/英文/俄文界面，自动识别桌面 IDE 或命令行 CLI 模式。
+  - **在线更新与端口配置**：支持一键检查最新 Release（保留代理设置），按 `[P]` 可快捷修改本地代理端口。
+  > 💡 **更新后提示**：当客户端在后台静默更新并由更新器自动重启的该次会话中，尚未加载代理。只需退出后从「**Antigravity (代理)**」重新打开，启动器将毫秒级自愈并恢复代理。
+- **Linux / WSL 用户**：运行 `./setup.sh` 即可自动创建桌面菜单快捷方式并开启自愈守护。
+
+#### 方式 B：手动复制部署
 桌面端只复制 `ide/` 内的文件到 **Antigravity 主程序目录**（与 `Antigravity.exe` 同级）。
 
 如果使用 **Antigravity CLI**，只复制 `cli/` 内的文件到 `agy.exe` 同级目录。`dbghelp.dll` 会在导出函数首次调用时加载唯一名称的 `antigravity_proxy.dll`，避开系统 `version.dll` 同名冲突。

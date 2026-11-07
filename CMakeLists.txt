@@ -162,6 +162,20 @@ if(WIN32)
 endif()
 
 ###################
+#    LAUNCHER     #
+###################
+if(WIN32)
+  add_executable(AntigravityLauncher WIN32
+    "src/launcher/AntigravityLauncher.cpp"
+  )
+  target_compile_definitions(AntigravityLauncher PRIVATE UNICODE _UNICODE)
+  target_link_libraries(AntigravityLauncher PRIVATE shell32 ole32 comdlg32 advapi32 user32)
+  if(NOT MSVC AND STATIC_RUNTIME)
+    target_link_options(AntigravityLauncher PRIVATE -static-libstdc++ -static-libgcc -municode)
+  endif()
+endif()
+
+###################
 #     INSTALL     #
 ###################
 install(TARGETS version dbghelp RUNTIME DESTINATION "bin")

@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 #  Antigravity-Proxy 编译脚本
 #  PowerShell Build Script for Windows
 # ============================================================
@@ -28,7 +28,7 @@ param(
 # ============================================================
 # 版本信息 (在此处统一管理版本号)
 # ============================================================
-$Version = "2.4"
+$Version = "2.5"
 
 # ============================================================
 # 辅助函数
@@ -471,11 +471,20 @@ FAILED_PRECONDITION (code 400): User location is not supported for the API use.
 
 ## 快速开始
 
-### 1. 选择部署目录
-- Antigravity 桌面端/IDE：只复制 `output/ide` 内的 `version.dll` 与 `config.json`。
-- Antigravity CLI：只复制 `output/cli` 内的 `dbghelp.dll`、`antigravity_proxy.dll` 与 `config.json`。
+### 1. 部署方式
 
-两个目录不得混合复制。CLI shim 会延迟加载唯一名称的 `antigravity_proxy.dll`，桌面端不需要 `dbghelp.dll`。
+#### 方式 A：一键智能向导与防更新覆盖守护（推荐 ⭐）
+- **Windows 用户**：解压后直接双击根目录的 `setup.bat` 启动智能配置向导：
+  - **原生防更新覆盖**：每次通过快捷方式启动时在 3 毫秒内自动比对，若客户端自动更新抹除了补丁，会瞬间自动热恢复。
+  - **多语言与智能感知**：支持中文/英文/俄文自动检测与切换，自动识别 IDE 桌面端或 CLI 命令行端。
+  - **在线更新与端口设置**：支持一键检查在线更新（自动保留代理配置），以及通过 `[P]` 选项随时查看或修改本地代理端口。
+- **Linux / WSL 用户**：运行 `./setup.sh`（或 `bash launcher/install-linux.sh`）即可安装桌面菜单并启用防更新自愈守护。
+
+#### 方式 B：手动复制部署
+- Antigravity 桌面端/IDE：只复制 `ide/` 内的 `version.dll` 与 `config.json` 到主程序目录。
+- Antigravity CLI：只复制 `cli/` 内的 `dbghelp.dll`、`antigravity_proxy.dll` 与 `config.json` 到 `agy.exe` 目录。
+
+两个目录不得混合复制。桌面端不需要 `dbghelp.dll`。
 
 ### 2. 配置代理
 编辑 `config.json`，设置代理服务器地址：
@@ -681,6 +690,38 @@ if (Test-Path $configWebSrc) {
     Write-Success "配置工具已复制到 output 目录"
 } else {
     Write-Warning "配置工具源文件不存在: $configWebSrc"
+}
+
+# ============================================================
+# 步骤 10.5: 复制防更新覆盖启动器与快捷方式安装套件
+# ============================================================
+
+Write-Step "整理防更新覆盖启动器与快捷方式工具..."
+$LauncherOutDir = Join-Path $OutputDir "launcher"
+if (-not (Test-Path $LauncherOutDir)) {
+    New-Item -ItemType Directory -Path $LauncherOutDir -Force | Out-Null
+}
+$launcherExeBuilt = Get-ChildItem -Path $BuildDir -Recurse -Filter "AntigravityLauncher.exe" | Select-Object -First 1
+if ($launcherExeBuilt) {
+    Copy-Item $launcherExeBuilt.FullName -Destination (Join-Path $LauncherOutDir "AntigravityLauncher.exe") -Force
+    Write-Success "原生启动器 AntigravityLauncher.exe 已复制到 output\launcher"
+}
+$launcherScriptsSrc = Join-Path $PSScriptRoot "scripts\launcher"
+if (Test-Path $launcherScriptsSrc) {
+    Get-ChildItem -Path $launcherScriptsSrc -File | Where-Object { $_.Name -notmatch '^setup\.(bat|sh)$' } | ForEach-Object {
+        Copy-Item $_.FullName -Destination (Join-Path $LauncherOutDir $_.Name) -Force
+    }
+    foreach ($entryFile in @("setup.bat", "setup.sh")) {
+        $eSrc = Join-Path $launcherScriptsSrc $entryFile
+        if (Test-Path $eSrc) {
+            Copy-Item $eSrc -Destination (Join-Path $OutputDir $entryFile) -Force
+        }
+    }
+    foreach ($oldBat in @("快速安装快捷方式.bat", "一键更新补丁.bat", "install-launcher.bat", "update-patch.bat")) {
+        $oldPath = Join-Path $OutputDir $oldBat
+        if (Test-Path $oldPath) { Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue }
+    }
+    Write-Success "跨平台智能配置向导套件 (setup.bat / setup.sh) 已同步到 output 目录"
 }
 
 # ============================================================

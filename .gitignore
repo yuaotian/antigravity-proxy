@@ -62,3 +62,10 @@ build-compatibility-tests*/
 .codex-tools/
 antigravity-oauth-183232-evidence/*
 antigravity-oauth-ab-20260901-191347/
+
+# Launcher runtime artifacts
+*.exe
+*.ico
+app_path.txt
+agy_path.txt
+*.pref

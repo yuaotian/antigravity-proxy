@@ -220,15 +220,26 @@ curl -x http://127.0.0.1:7890 https://www.google.com -I
 
 ### Step 2: Get the Files
 
-You need these files:
-- `version.dll`
-- `dbghelp.dll` (Antigravity CLI only)
-- `config.json`
+Releases provide separate packages for different usage scenarios:
+- 🌟 **[Recommended] Desktop Client (IDE GUI, for 99% of users)**:
+  - `antigravity-proxy-vX-ide-win-x64.zip` / `...-x86.zip`: Contains `ide/` (`version.dll`, `config.json`), tailored for the `Antigravity.exe` desktop editor.
+- 💻 **Console CLI (Command-line tool, for advanced terminal users)**:
+  - `antigravity-proxy-vX-cli-win-x64.zip` / `...-x86.zip`: Contains `cli/` (`dbghelp.dll`, `antigravity_proxy.dll`, `config.json`), tailored for the `agy.exe` terminal command.
 
 (Download from Releases, or build them yourself.)
 
 ### Step 3: Deploy to Antigravity
+ 
+#### Method A: Smart Setup Wizard & Auto-Update Guard (Recommended ⭐)
+- **Windows**: Extract the release ZIP and double-click `setup.bat` to launch the wizard:
+  - **Anti-Update Guard & Dedicated Entry**: Creates a dedicated "**Antigravity (Proxy)**" entry on Desktop and Start Menu, coexisting safely with official entries without being overwritten by Squirrel updates. Restores wiped patches in milliseconds.
+  - **Configuration Protection**: User-customized proxy ports and settings are strictly preserved and never overwritten.
+  - **Smart & Multilingual**: Auto-detects English/Chinese/Russian, and adapts between Desktop IDE and CLI mode.
+  - **Online Update & Port Config**: One-click online update (preserves custom ports), or press `[P]` to change proxy port.
+  > 💡 **Post-Update Notice**: When the client updates and auto-restarts via the updater, proxy files have not yet been restored for that single session. Simply exit and relaunch via "**Antigravity (Proxy)**" to auto-heal and restore proxy immediately.
+- **Linux / WSL**: Run `./setup.sh` to install desktop/application menu shortcuts with auto-heal guard.
 
+#### Method B: Manual Deployment
 Copy `version.dll` and `config.json` to Antigravity’s main program directory (next to `Antigravity.exe`). Then launch Antigravity — done.
 
 For **Antigravity CLI**, copy `dbghelp.dll`, `version.dll`, and `config.json` next to `agy.exe`. `agy.exe` loads the colocated `dbghelp.dll`, which then loads `version.dll`; no separate launcher is required.
