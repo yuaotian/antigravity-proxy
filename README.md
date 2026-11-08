@@ -33,7 +33,20 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 
 ## 安装
 
-### 方式一：在线安装（推荐）
+### 方式一：Antigravity IDE 插件市场（推荐）
+
+Antigravity IDE 用户优先从 Open VSX 安装插件：
+
+- [Open VSX 市场页面](https://open-vsx.org/extension/yuaotian/antigravity-proxy)
+- 在 IDE 扩展视图搜索 `Antigravity Proxy`，或执行：
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension yuaotian.antigravity-proxy
+```
+
+安装后执行 `Reload Window`。插件首次启动会自动补齐 `version.dll`；如果市场搜索不到，按「Antigravity IDE 插件」一节的 VSIX / 命令行兜底；仍然不行再用下面的在线安装脚本。
+
+### 方式二：在线安装脚本（桌面版 / CLI / 插件兜底）
 
 在 PowerShell 中粘贴执行：
 
@@ -57,7 +70,7 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 > 获取脚本失败时，打开代理软件的「系统代理」后重试。部署前请先完全退出要安装的应用（`-ExtensionOnly` 除外）。
 > 脚本兼容 Windows 10 / 11 自带的 Windows PowerShell 5.1，也可在 PowerShell 7 中运行。
 
-### 方式二：下载发布包
+### 方式三：下载发布包
 
 从 [Releases](https://github.com/yuaotian/antigravity-proxy/releases) 下载（32 位程序选 `x86`）：
 
@@ -96,15 +109,35 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 - **自更新**：本地代理 → GitHub 镜像 → 直连检查新版本，下载后校验 SHA256 再安装；
 - 界面支持中文 / English / Русский，默认跟随 IDE 语言。
 
-**安装**：在线安装与 `doctor` 会自动安装。手动部署后若插件未安装，IDE 启动时会弹出一条系统通知（每个补丁版本只提示一次，忽略即不再打扰）：补丁同目录有插件安装包时，点击通知即在本地安装；只复制了 `version.dll` 时，点击后会先确认，再打开 PowerShell 窗口在线安装插件。也可在扩展视图 → 右上角 `…` → 「从 VSIX 安装」。
+### 安装插件（推荐：Open VSX 市场）
 
-**从 Open VSX 安装插件**：在 Antigravity IDE 扩展视图搜索 `Antigravity Proxy`，或执行：
+**最佳方式**：打开 [Open VSX 市场页面](https://open-vsx.org/extension/yuaotian/antigravity-proxy)，或在 Antigravity IDE 扩展视图搜索 `Antigravity Proxy` 点击安装。也可命令行走市场安装：
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension yuaotian.antigravity-proxy
 ```
 
-安装后执行 `Reload Window`。
+安装后执行 `Reload Window`；插件首次启动会自动补齐 `version.dll`。
+
+**如果搜索不到 / 安装失败**：
+
+1. 从 [Open VSX 页面](https://open-vsx.org/extension/yuaotian/antigravity-proxy) 或 [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) 下载 VSIX；
+2. 扩展视图右上角 `…` → 「从 VSIX 安装」；或：
+
+```powershell
+$vsix = Join-Path $env:TEMP "antigravity-proxy-2.6.3.vsix"
+[Net.ServicePointManager]::SecurityProtocol = 3072
+Invoke-WebRequest "https://open-vsx.org/api/yuaotian/antigravity-proxy/2.6.3/file/yuaotian.antigravity-proxy-2.6.3.vsix" -OutFile $vsix
+& "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension $vsix --force
+```
+
+（版本号按当前 Release 替换；也可以从 GitHub Releases 下载后把路径换成实际 VSIX。）
+
+**仍然失败：在线脚本（只装插件，中文可走 wget.la 镜像）**：
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol=3072; & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('https://wget.la/https://raw.githubusercontent.com/yuaotian/antigravity-proxy/main/scripts/install-online.ps1'))) -ExtensionOnly -Yes
+```
 
 | 状态栏 | 含义 |
 |:--|:--|

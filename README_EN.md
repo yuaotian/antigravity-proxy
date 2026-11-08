@@ -33,12 +33,25 @@ Antigravity-Proxy is a proxy patch (DLL) that works once you put it in the Antig
 
 ## Installation
 
-### Option 1: Online install (recommended)
+### Option 1: Antigravity IDE Marketplace (recommended)
+
+For Antigravity IDE, install the extension from Open VSX first:
+
+- [Antigravity Proxy on Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy)
+- Search for `Antigravity Proxy` in the Extensions view, or run:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension yuaotian.antigravity-proxy
+```
+
+Reload the IDE window after installation. The extension restores `version.dll` on its first start. If the marketplace search does not find it, use the VSIX / CLI fallback in the "Antigravity IDE Extension" section; if that still fails, use the online script below.
+
+### Option 2: Online install script (desktop / CLI / extension fallback)
 
 Paste and run in PowerShell:
 
 ```powershell
-[Net.ServicePointManager]::SecurityProtocol=3072; & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('https://wget.la/https://raw.githubusercontent.com/yuaotian/antigravity-proxy/main/scripts/install-online.ps1')))
+[Net.ServicePointManager]::SecurityProtocol=3072; & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/yuaotian/antigravity-proxy/main/scripts/install-online.ps1')))
 ```
 
 The script detects installed products, downloads the matching version and verifies SHA256, and deploys the patch and `config.json`. For Antigravity IDE it also installs the companion extension. An existing `config.json` is not overwritten. Download order: local proxy (environment variable or system proxy, used only if its port is reachable) → mirrors → direct GitHub, with up to 3 attempts per source.
@@ -57,7 +70,7 @@ To pass parameters, add them at the end of the command, e.g. `... install-online
 > If the script cannot be downloaded, turn on "System Proxy" in your proxy app and try again. Fully quit the app you are installing for before deploying (not needed for `-ExtensionOnly`).
 > The script works with Windows PowerShell 5.1 built into Windows 10 / 11, and with PowerShell 7.
 
-### Option 2: Download a release package
+### Option 3: Download a release package
 
 Download from [Releases](https://github.com/yuaotian/antigravity-proxy/releases) (choose `x86` for 32-bit programs):
 
@@ -96,15 +109,35 @@ Restart the app after deployment.
 - **Self-update**: local proxy → GitHub mirror → direct, SHA256 verified before install;
 - UI in Chinese / English / Russian, following the IDE language by default.
 
-**Install**: online install and `doctor` install it automatically. After a manual deployment, if the extension is not installed, the IDE shows a system notification on startup (once per patch version; ignoring it means no further reminders). If the extension package sits next to the patch, clicking the notification installs it locally; if only `version.dll` was copied, clicking asks for confirmation first and then opens a PowerShell window to install the extension online. You can also use Extensions view → `…` at the top right → "Install from VSIX...".
+### Install the extension (recommended: Open VSX)
 
-**Install from Open VSX**: search for `Antigravity Proxy` in the Extensions view, or run:
+**Best option**: open [Antigravity Proxy on Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy), or search for `Antigravity Proxy` in the Extensions view. You can also install it from the marketplace via CLI:
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension yuaotian.antigravity-proxy
 ```
 
-Reload the IDE window after installation.
+Reload the IDE window after installation; the extension restores `version.dll` on its first start.
+
+**If search does not find it / install fails:**
+
+1. Download the VSIX from [Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy) or [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases);
+2. Extensions view → `…` → "Install from VSIX..."; or:
+
+```powershell
+$vsix = Join-Path $env:TEMP "antigravity-proxy-2.6.3.vsix"
+[Net.ServicePointManager]::SecurityProtocol = 3072
+Invoke-WebRequest "https://open-vsx.org/api/yuaotian/antigravity-proxy/2.6.3/file/yuaotian.antigravity-proxy-2.6.3.vsix" -OutFile $vsix
+& "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension $vsix --force
+```
+
+(Replace the version with the current release; you can also download the VSIX from GitHub Releases and pass its path instead.)
+
+**Still failing: online script (extension only, direct GitHub):**
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol=3072; & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/yuaotian/antigravity-proxy/main/scripts/install-online.ps1'))) -ExtensionOnly -Yes
+```
 
 | Status bar | Meaning |
 |:--|:--|
