@@ -100,10 +100,15 @@ class IpInfoService {
     this.inflight = null;
   }
 
-  /** @param {(state: any) => void} cb */
+  /**
+   * 订阅状态变化。
+   * 返回 VS Code 风格的 Disposable（调用方会直接放进 context.subscriptions；
+   * 若返回裸函数，扩展停用时 dispose() 会抛 AggregateError）。
+   * @param {(state: any) => void} cb
+   */
   onDidChange(cb) {
     this.listeners.add(cb);
-    return () => this.listeners.delete(cb);
+    return { dispose: () => { this.listeners.delete(cb); } };
   }
 
   emit() {

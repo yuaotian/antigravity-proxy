@@ -104,7 +104,8 @@ test("日志服务：快照 + 插件事件 + 截断重置事件", async () => {
     await wait(260);
     assert.ok(events.some((e) => e.type === "append" && e.lines.some((l) => l.text === "插件事件")));
 
-    fs.writeFileSync(file, "[2026-11-08 10:00:01] [PID:1][TID:2] [警告] after truncate\n", "utf8");
+    // 注意：内容必须比原文件更短，否则按"追加"处理（真实 10MB 覆盖写也是从 0 开始，size 会小于 offset）
+    fs.writeFileSync(file, "[2026-11-08 10:00:01] [PID:1][TID:2] [警告] x\n", "utf8");
     await wait(300);
     assert.ok(events.some((e) => e.type === "reset"), "截断应广播 reset");
   } finally {

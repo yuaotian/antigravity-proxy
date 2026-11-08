@@ -62,7 +62,13 @@ class LogService {
         }
       },
       onReset: (reason) => this.reset(reason),
-      onFile: (file) => { this.file = file ? file.path : ""; },
+      onFile: (file) => {
+        const next = file ? file.path : "";
+        if (this.file === next) return;
+        this.file = next;
+        // 文件可能在视图打开后才出现（首次启动/跨天）：广播给所有视图更新页脚文件名
+        this.emit({ type: "file", file: next });
+      },
     });
     this.tailer.start();
   }

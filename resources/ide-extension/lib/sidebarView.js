@@ -40,6 +40,7 @@ class ProxySidebarProvider {
     this.unsubscribeLogs = deps.logService.subscribe((event) => {
       if (!this.view) return;
       if (event.type === "append") this.post({ type: "logsAppend", lines: event.lines });
+      else if (event.type === "file") this.post({ type: "logsFile", file: event.file });
       else this.post({ type: "logsReset", snapshot: event.snapshot });
     });
   }

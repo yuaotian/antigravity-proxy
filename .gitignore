@@ -71,3 +71,5 @@ antigravity-oauth-ab-20260901-191347/
 app_path.txt
 agy_path.txt
 *.pref
+
+.tmp*/

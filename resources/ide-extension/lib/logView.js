@@ -104,6 +104,7 @@ class LogViewProvider {
     this.unsubscribe = deps.logService.subscribe((event) => {
       if (!this.view) return;
       if (event.type === "append") void this.view.webview.postMessage({ type: "append", lines: event.lines });
+      else if (event.type === "file") void this.view.webview.postMessage({ type: "file", file: event.file });
       else void this.view.webview.postMessage({ type: "reset", snapshot: event.snapshot });
     });
   }
@@ -188,6 +189,7 @@ class LogPanel {
     }));
     this.unsubscribe = deps.logService.subscribe((event) => {
       if (event.type === "append") void this.panel.webview.postMessage({ type: "append", lines: event.lines });
+      else if (event.type === "file") void this.panel.webview.postMessage({ type: "file", file: event.file });
       else void this.panel.webview.postMessage({ type: "reset", snapshot: event.snapshot });
     });
     this.panel.onDidDispose(() => {

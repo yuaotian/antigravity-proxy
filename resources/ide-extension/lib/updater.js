@@ -88,10 +88,13 @@ class ExtensionUpdater {
     this.busy = false;
   }
 
-  /** @param {(state: UpdateState) => void} cb */
+  /**
+   * 订阅状态变化；返回 Disposable（与 VS Code 订阅容器兼容）。
+   * @param {(state: UpdateState) => void} cb
+   */
   onDidChange(cb) {
     this.listeners.add(cb);
-    return () => this.listeners.delete(cb);
+    return { dispose: () => { this.listeners.delete(cb); } };
   }
 
   getState() {

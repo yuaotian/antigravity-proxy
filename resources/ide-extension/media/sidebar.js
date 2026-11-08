@@ -316,9 +316,10 @@
       refs[`val-${key}`] = /** @type {any} */ (app.querySelector(`#val-${key}`));
     }
     for (const key of ["network", "api", "anti"]) {
-      refs[`gem-${key}`] = /** @type {any} */ (app.querySelector(`#gem-${key}`));
-      refs[`gemdot-${key}`] = /** @type {any} */ (app.querySelector(`#gemdot-${key}`));
-      refs[`gemval-${key}`] = /** @type {any} */ (app.querySelector(`#gemval-${key}`));
+      // 注意：tagRow 生成的是 row-/dot-/val- 前缀（与状态行一致），这里必须用同一套 id
+      refs[`gem-${key}`] = /** @type {any} */ (app.querySelector(`#row-gem-${key}`));
+      refs[`gemdot-${key}`] = /** @type {any} */ (app.querySelector(`#dot-gem-${key}`));
+      refs[`gemval-${key}`] = /** @type {any} */ (app.querySelector(`#val-gem-${key}`));
     }
   }
 
@@ -606,6 +607,8 @@
   // 日志渲染
   // ============================================================
   const LEVEL_CLASS = { debug: "lv-debug", info: "lv-info", warn: "lv-warn", error: "lv-error" };
+  /** 侧栏窄，用三字母缩写代替直接截断（DEBU/ERRO 可读性差） */
+  const LEVEL_SHORT = { debug: "DBG", info: "INF", warn: "WRN", error: "ERR" };
   const MAX_WEBVIEW_LINES = 1500;
   const MAX_RENDERED = 400;
 
@@ -641,7 +644,7 @@
     const time = (line.ts || "").split(" ")[1] || "";
     const row = h("div", { class: `log-row ${LEVEL_CLASS[line.level] || ""}` },
       h("span", { class: "log-time", text: time }),
-      h("span", { class: "log-lv", text: line.level.toUpperCase().slice(0, 4) }),
+      h("span", { class: "log-lv", text: LEVEL_SHORT[line.level] || line.level.toUpperCase().slice(0, 3) }),
       h("span", { class: "log-text" }),
     );
     const textEl = /** @type {any} */ (row.lastElementChild);
@@ -686,15 +689,19 @@
     if (state.autoScroll) list.scrollTop = list.scrollHeight;
   }
 
+  /** 更新页脚日志文件名（首次启动时文件可能尚未出现，需要后续 events 补齐） */
+  function setLogFile(pathText) {
+    const file = refs["log-file"];
+    if (!file) return;
+    const text = String(pathText || "");
+    file.textContent = text ? text.split(/[\\/]/).pop() : T("logs.noFile");
+    file.title = text;
+  }
+
   /** @param {any} snapshot */
   function resetLogs(snapshot) {
     state.logs = Array.isArray(snapshot?.lines) ? snapshot.lines.slice(-MAX_WEBVIEW_LINES) : [];
-    const file = refs["log-file"];
-    if (file) {
-      const pathText = String(snapshot?.file || "");
-      file.textContent = pathText ? pathText.split(/[\\/]/).pop() : T("logs.noFile");
-      file.title = pathText;
-    }
+    setLogFile(snapshot?.file);
     state.autoScroll = true;
     renderLogs(true);
   }
@@ -740,6 +747,9 @@
         break;
       case "logsReset":
         resetLogs(msg.snapshot);
+        break;
+      case "logsFile":
+        setLogFile(msg.file);
         break;
       case "toast":
         showToast(msg.kind, msg.text);

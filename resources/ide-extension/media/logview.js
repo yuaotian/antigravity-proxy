@@ -117,10 +117,12 @@
     const msg = h("span", { class: "msg" });
     if (line.source === "plugin") msg.append(h("span", { class: "src", text: T("logs.sourcePlugin") }));
     appendHighlighted(msg, line.text);
+    // pid 列必须始终存在：插件事件没有 PID，若省略会让消息落进 52px 的 PID 列，
+    // 表现为文字在右侧被逐字换行（真实机测发现的布局问题）
     return h("div", { class: `row ${LEVEL_CLASS[line.level] || ""}` },
       h("span", { class: "t", text: time }),
       h("span", { class: "lvl", text: lvl }),
-      line.pid ? h("span", { class: "pid", text: String(line.pid) }) : null,
+      h("span", { class: "pid", text: line.pid ? String(line.pid) : "" }),
       msg,
     );
   }
@@ -301,8 +303,8 @@
           "proxy-error": T("sb.geminiProxyError"),
         }[/** @type {any} */ (gem.state)] || "")
       : env.gemini && env.gemini.checking
-        ? T("side2.geminiChecking")
-        : T("side2.geminiIdle");
+        ? "Gemini " + T("side2.geminiChecking")
+        : "Gemini " + T("side2.geminiIdle");
     el.textContent = T("logs.env", {
       proxy: proxyText,
       ip: egress.ip || "—",
@@ -337,6 +339,10 @@
         break;
       case "reset":
         applySnapshot(msg.snapshot || null);
+        break;
+      case "file":
+        state.file = msg.file || "";
+        updateCounts();
         break;
       case "toast": {
         const toast = /** @type {any} */ ($("toast"));

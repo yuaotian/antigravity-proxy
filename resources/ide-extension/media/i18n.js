@@ -451,7 +451,7 @@
     "logs.openPanel": ["在底部面板打开日志", "Open logs panel", "Открыть панель журнала"],
     "logs.noFile": ["暂无日志文件", "no log file yet", "файла журнала пока нет"],
     "logs.count": ["{shown}/{total} 行", "{shown}/{total} lines", "{shown}/{total} строк"],
-    "logs.env": ["代理 {proxy} · 出口 {ip} {org} · Gemini {gemini}", "Proxy {proxy} · egress {ip} {org} · Gemini {gemini}", "Прокси {proxy} · внешний {ip} {org} · Gemini {gemini}"],
+    "logs.env": ["代理 {proxy} · 出口 {ip} {org} · {gemini}", "Proxy {proxy} · egress {ip} {org} · {gemini}", "Прокси {proxy} · внешний {ip} {org} · {gemini}"],
     "logs.stats": ["显示 {shown} · 总计 {total} · 已丢弃 {dropped}", "shown {shown} · total {total} · dropped {dropped}", "показано {shown} · всего {total} · отброшено {dropped}"],
     "logs.sourcePlugin": ["插件", "ext", "расш."],
     "logs.fileSwitched": ["日志文件已切换，视图已重置", "Log file switched; view reset", "Файл журнала изменён; вид сброшен"],
