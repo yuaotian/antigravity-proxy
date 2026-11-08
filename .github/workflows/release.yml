@@ -152,6 +152,36 @@ jobs:
         compression-level: 0
         retention-days: 1
 
+  # 直接依赖 build 产物发布，避免依赖 release:published 事件
+  # （GitHub 会抑制由 GITHUB_TOKEN 创建 release 所触发的后续 workflow）。
+  publish-openvsx:
+    name: Publish Open VSX
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
+
+    steps:
+      - name: 下载 x64 VSIX
+        uses: actions/download-artifact@v8
+        with:
+          name: release-asset-vsix-x64
+          path: dist
+
+      - name: 发布到 Open VSX
+        shell: bash
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "::error::缺少 OVSX_PAT Secret。请在仓库 Settings → Secrets and variables → Actions 添加受限 token。"
+            exit 1
+          fi
+          VSIX="$(find dist -name '*.vsix' -print -quit)"
+          test -n "$VSIX"
+          echo "发布：$VSIX"
+          npx --yes ovsx@latest publish "$VSIX" -p "$OVSX_PAT"
+
   release:
     name: Publish Release
     runs-on: ubuntu-latest
