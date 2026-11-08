@@ -2,206 +2,143 @@
 "use strict";
 
 /**
- * 左侧活动栏视图（单一职责：把状态模型与快捷命令渲染为原生 TreeView 节点；不做任何 IO）。
+ * 左侧活动栏视图（WebviewView 宿主侧：负责 HTML/CSP、状态模型下发与消息路由；不做 IO）。
  *
- * 设计意图：
- * - 让插件除了底部状态栏外，也在 IDE 左侧活动栏（Activity Bar）常驻显示 G8 护盾图标；
- * - 展开后分为「当前状态」与「快捷操作」两组，100% 适配 IDE 深色与浅色主题；
- * - 点击状态项或操作项直接复用既有命令（打开设置面板、扫描本机代理、测试连接、修复补丁、重启 IDE、打开日志）。
+ * 为什么从 TreeView 改为 WebviewView：
+ * - 需求要的实时日志、级别筛选、关键字搜索、IP/运营商卡片、Gemini 置信度都不是 TreeView 能表达的；
+ * - WebviewView 仍是 IDE 原生视图：view/title 菜单、拖动、快捷键与主题变量都保持不变。
+ *
+ * 消息协议（webview → host）：
+ *   ready | action{action} | copy{text}
+ * 消息协议（host → webview）：
+ *   init{lang, model, logs, settings} | model{model} | lang{lang}
+ *   logsAppend{lines} | logsReset{snapshot} | toast{kind, text}
  */
 
-/** @typedef {import("./statusBar").StatusModel} StatusModel */
-/** @typedef {(key: string, params?: Record<string, any>) => string} Translate */
+const { renderWebviewHtml } = require("./webviewHtml");
 
 class ProxySidebarProvider {
   /**
-   * @param {typeof import("vscode")} vscode
-   * @param {Translate} t
+   * @param {{
+   *   vscode: typeof import("vscode"),
+   *   extensionUri: import("vscode").Uri,
+   *   logService: import("./logService").LogService,
+   *   t: (key: string, params?: Record<string, any>) => string,
+   *   lang: () => string,
+   *   version: string,
+   *   getSettings: () => Record<string, any>,
+   *   actions: Record<string, () => any>,
+   * }} deps
    */
-  constructor(vscode, t) {
-    this.vscode = vscode;
-    this.t = t;
-    /** @type {StatusModel | null} */
+  constructor(deps) {
+    this.deps = deps;
+    this.vscode = deps.vscode;
+    /** @type {any} */
     this.model = null;
-    this._emitter = new vscode.EventEmitter();
-    this.onDidChangeTreeData = this._emitter.event;
-  }
-
-  /**
-   * 更新状态模型并通知左侧树视图重绘
-   * @param {StatusModel} m
-   */
-  render(m) {
-    this.model = m;
-    this._emitter.fire(undefined);
-  }
-
-  /** @param {any} element */
-  getTreeItem(element) {
-    return element;
-  }
-
-  /** @param {any} [element] */
-  getChildren(element) {
-    const { TreeItem, TreeItemCollapsibleState, ThemeIcon, ThemeColor } = this.vscode;
-    const t = this.t;
-
-    // 根节点：返回「当前状态」与「快捷操作」两个默认展开的分组
-    if (!element) {
-      const statusGroup = new TreeItem(t("side.groupStatus"), TreeItemCollapsibleState.Expanded);
-      statusGroup.contextValue = "group-status";
-      const actionsGroup = new TreeItem(t("side.groupActions"), TreeItemCollapsibleState.Expanded);
-      actionsGroup.contextValue = "group-actions";
-      return [statusGroup, actionsGroup];
-    }
-
-    if (element.contextValue === "group-status") {
-      return this._buildStatusItems(TreeItem, TreeItemCollapsibleState, ThemeIcon, ThemeColor);
-    }
-
-    if (element.contextValue === "group-actions") {
-      return this._buildActionItems(TreeItem, TreeItemCollapsibleState, ThemeIcon);
-    }
-
-    return [];
-  }
-
-  /**
-   * 构造「当前状态」分组下的实时状态节点
-   * @param {typeof import("vscode").TreeItem} TreeItem
-   * @param {typeof import("vscode").TreeItemCollapsibleState} State
-   * @param {typeof import("vscode").ThemeIcon} ThemeIcon
-   * @param {typeof import("vscode").ThemeColor} ThemeColor
-   */
-  _buildStatusItems(TreeItem, State, ThemeIcon, ThemeColor) {
-    const t = this.t;
-    const m = this.model;
-    if (!m) return [];
-
-    const items = [];
-
-    // 1. 补丁状态
-    const patchItem = new TreeItem(t("sb.rowPatch"), State.None);
-    if (!m.patch.dllExists) {
-      patchItem.description = t("sb.patchStateMissing");
-      patchItem.iconPath = new ThemeIcon("error", new ThemeColor("testing.iconFailed"));
-      patchItem.tooltip = t("sb.patchMissingSummary");
-      patchItem.command = { command: "antigravityProxy.repairPatch", title: t("side.repairPatch") };
-    } else if (m.patch.dllLoaded === true && !m.pendingRestart) {
-      patchItem.description = t("sb.patchStateActive");
-      patchItem.iconPath = new ThemeIcon("agp-shield", new ThemeColor("testing.iconPassed"));
-      patchItem.tooltip = t("sb.okSummary");
-      patchItem.command = { command: "antigravityProxy.openSettings", title: t("side.openSettings") };
-    } else if (m.pendingRestart || m.patch.needsRestart || m.patch.dllLoaded === false) {
-      patchItem.description = t("sb.patchStatePending");
-      patchItem.iconPath = new ThemeIcon("sync~spin", new ThemeColor("editorWarning.foreground"));
-      patchItem.tooltip = t("sb.pendingSummary");
-      patchItem.command = { command: "antigravityProxy.restartIde", title: t("side.restartIde") };
-    } else {
-      patchItem.description = t("sb.patchStateReady");
-      patchItem.iconPath = new ThemeIcon("info");
-      patchItem.command = { command: "antigravityProxy.openSettings", title: t("side.openSettings") };
-    }
-    items.push(patchItem);
-
-    // 2. 配置文件状态
-    const cfgItem = new TreeItem(t("sb.rowConfig"), State.None);
-    const cfgMap = {
-      ok: { desc: t("sb.configStateOk"), icon: "pass-filled", color: "testing.iconPassed" },
-      missing: { desc: t("sb.configStateMissing"), icon: "warning", color: "editorWarning.foreground" },
-      invalid: { desc: t("sb.configStateInvalid"), icon: "warning", color: "editorWarning.foreground" },
-      error: { desc: t("sb.configStateError"), icon: "error", color: "testing.iconFailed" },
-    };
-    const cfgState = cfgMap[m.configStatus] || cfgMap.error;
-    cfgItem.description = cfgState.desc;
-    cfgItem.iconPath = new ThemeIcon(cfgState.icon, new ThemeColor(cfgState.color));
-    cfgItem.command = { command: "antigravityProxy.openSettings", title: t("side.openSettings") };
-    items.push(cfgItem);
-
-    // 3. 当前代理地址
-    const proxyItem = new TreeItem(t("sb.rowProxy"), State.None);
-    if (!m.proxy || m.proxy.port === 0) {
-      proxyItem.description = t("sb.disabled");
-      proxyItem.iconPath = new ThemeIcon("circle-slash");
-      proxyItem.tooltip = t("sb.disabledSummary");
-    } else {
-      proxyItem.description = `${m.proxy.type}://${m.proxy.host}:${m.proxy.port}`;
-      proxyItem.iconPath = new ThemeIcon("agp-shield");
-      proxyItem.tooltip = `${m.proxy.type}://${m.proxy.host}:${m.proxy.port}`;
-    }
-    proxyItem.command = { command: "antigravityProxy.openSettings", title: t("side.openSettings") };
-    items.push(proxyItem);
-
-    // 4. 连通性状态
-    if (m.proxy && m.proxy.port > 0) {
-      const reachItem = new TreeItem(t("sb.rowReach"), State.None);
-      if (m.probing) {
-        reachItem.description = t("sb.probing", { port: m.proxy.port });
-        reachItem.iconPath = new ThemeIcon("sync~spin");
-      } else if (m.reach) {
-        if (m.reach.ok) {
-          reachItem.description = Number(m.reach.latencyMs) > 0
-            ? t("sb.reachOkLatency", { ms: m.reach.latencyMs })
-            : t("sb.reachOk");
-          reachItem.iconPath = new ThemeIcon("pass-filled", new ThemeColor("testing.iconPassed"));
-        } else {
-          reachItem.description = m.reach.message;
-          reachItem.iconPath = new ThemeIcon("debug-disconnect", new ThemeColor("editorWarning.foreground"));
-        }
-        reachItem.tooltip = m.reach.message;
-      } else {
-        reachItem.description = "—";
-        reachItem.iconPath = new ThemeIcon("plug");
-      }
-      reachItem.command = { command: "antigravityProxy.testProxy", title: t("side.testProxy") };
-      items.push(reachItem);
-    }
-
-    // 5. 若缺少后端目标进程（如 agy.exe），在状态列表底部显示一键补齐项
-    const missingTargets = m.missingTargets || [];
-    if (missingTargets.length > 0) {
-      const names = missingTargets.join(", ");
-      const fixItem = new TreeItem(t("sb.targetsMissing", { names }), State.None);
-      fixItem.description = t("sb.linkFixTargets");
-      fixItem.iconPath = new ThemeIcon("warning", new ThemeColor("editorWarning.foreground"));
-      fixItem.tooltip = t("sb.targetsMissingSummary", { names });
-      fixItem.command = { command: "antigravityProxy.fixTargets", title: t("sb.linkFixTargets") };
-      items.push(fixItem);
-    }
-
-    return items;
-  }
-
-  /**
-   * 构造「快捷操作」分组下的操作按钮节点
-   * @param {typeof import("vscode").TreeItem} TreeItem
-   * @param {typeof import("vscode").TreeItemCollapsibleState} State
-   * @param {typeof import("vscode").ThemeIcon} ThemeIcon
-   */
-  _buildActionItems(TreeItem, State, ThemeIcon) {
-    const t = this.t;
-    /** @type {[string, string, string][]} */
-    const actions = [
-      ["side.openSettings", "settings-gear", "antigravityProxy.openSettings"],
-      ["side.scanProxy", "search", "antigravityProxy.scanProxy"],
-      ["side.testProxy", "plug", "antigravityProxy.testProxy"],
-      ["side.repairPatch", "shield", "antigravityProxy.repairPatch"],
-      ["side.restartIde", "debug-restart", "antigravityProxy.restartIde"],
-      ["side.openLogs", "folder-opened", "antigravityProxy.openLogs"],
-    ];
-    return actions.map(([labelKey, iconName, cmd]) => {
-      const label = t(labelKey);
-      const item = new TreeItem(label, State.None);
-      item.iconPath = new ThemeIcon(iconName);
-      item.command = { command: cmd, title: label };
-      return item;
+    /** @type {import("vscode").WebviewView | null} */
+    this.view = null;
+    this.unsubscribeLogs = deps.logService.subscribe((event) => {
+      if (!this.view) return;
+      if (event.type === "append") this.post({ type: "logsAppend", lines: event.lines });
+      else this.post({ type: "logsReset", snapshot: event.snapshot });
     });
   }
 
+  /**
+   * @param {import("vscode").WebviewView} webviewView
+   */
+  resolveWebviewView(webviewView) {
+    const { vscode, extensionUri } = this.deps;
+    this.view = webviewView;
+    const mediaUri = vscode.Uri.joinPath(extensionUri, "media");
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [mediaUri],
+    };
+    webviewView.webview.html = renderWebviewHtml({
+      vscode,
+      webview: webviewView.webview,
+      mediaUri,
+      title: this.deps.t("side.title"),
+      lang: this.deps.lang(),
+      data: {
+        icon: webviewView.webview.asWebviewUri(vscode.Uri.joinPath(mediaUri, "icon.png")).toString(),
+        version: this.deps.version,
+      },
+      styles: ["codicons/codicon.css", "sidebar.css"],
+      scripts: ["i18n.js", "sidebar.js"],
+      bodyClass: "sidebar-body",
+    });
+    const sub = webviewView.webview.onDidReceiveMessage((msg) => void this.onMessage(msg));
+    webviewView.onDidDispose(() => {
+      sub.dispose();
+      this.view = null;
+    });
+  }
+
+  /**
+   * 更新状态模型：视图存在时即时下发，否则等下次 resolve 的 init 回放。
+   * @param {any} model
+   */
+  render(model) {
+    this.model = model;
+    this.post({ type: "model", model });
+  }
+
+  /** 语言切换：前端按 data-lang/消息重建文案（探测结果由宿主重新探测后随 model 下发） */
+  relocalize() {
+    this.post({ type: "lang", lang: this.deps.lang() });
+  }
+
+  postInit() {
+    this.post({
+      type: "init",
+      lang: this.deps.lang(),
+      model: this.model,
+      logs: this.deps.logService.snapshot(),
+      settings: this.deps.getSettings(),
+    });
+  }
+
+  /** @param {any} msg */
+  post(msg) {
+    if (!this.view) return;
+    void this.view.webview.postMessage(msg);
+  }
+
+  /** @param {"info" | "warn" | "error"} kind @param {string} text */
+  toast(kind, text) {
+    this.post({ type: "toast", kind, text });
+  }
+
+  /** @param {any} msg */
+  async onMessage(msg) {
+    const type = String(msg?.type || "");
+    if (type === "ready") {
+      this.postInit();
+      return;
+    }
+    if (type === "copy") {
+      await this.vscode.env.clipboard.writeText(String(msg.text ?? ""));
+      this.toast("info", this.deps.t("host.copied"));
+      return;
+    }
+    if (type === "action") {
+      const name = String(msg.action || "");
+      const fn = this.deps.actions[name];
+      if (!fn) return;
+      try {
+        await fn();
+      } catch (e) {
+        this.toast("error", /** @type {Error} */ (e).message || String(e));
+      }
+    }
+  }
+
   dispose() {
-    this._emitter.dispose();
+    this.unsubscribeLogs();
+    this.view = null;
   }
 }
 
 module.exports = { ProxySidebarProvider };
-

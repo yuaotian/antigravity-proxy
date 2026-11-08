@@ -1,0 +1,267 @@
+/*
+ * 实时日志窗口样式（底部面板 / 编辑器标签页共用）
+ * 原则：只用 --vscode-* 主题变量；等宽字体；级别颜色取主题状态色；工具栏窄宽度自动换行。
+ */
+
+:root {
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --border: var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.22)));
+  --muted: var(--vscode-descriptionForeground);
+  --ok: var(--vscode-testing-iconPassed, var(--vscode-charts-green, #73c991));
+  --warn: var(--vscode-editorWarning-foreground, #cca700);
+  --err: var(--vscode-errorForeground, #f48771);
+  --hover: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.12));
+  --radius: 4px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  overflow: hidden;
+}
+
+[hidden] { display: none !important; }
+
+.lv {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ---------- 工具栏 ---------- */
+.lv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px var(--s3);
+  border-bottom: 1px solid var(--border);
+  background: var(--vscode-editor-background);
+  flex: none;
+}
+
+.lv-levels {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  flex: none;
+}
+
+.lv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lv-chip:last-child { border-right: none; }
+.lv-chip:hover { background: var(--hover); color: var(--vscode-foreground); }
+.lv-chip.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+
+.lv-chip .cnt {
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.lv-chip.active .cnt {
+  background: color-mix(in srgb, var(--vscode-button-foreground) 22%, transparent);
+  color: var(--vscode-button-foreground);
+}
+
+.lv-search {
+  flex: 1 1 180px;
+  min-width: 120px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: var(--radius);
+  outline: none;
+}
+
+.lv-search:focus { border-color: var(--vscode-focusBorder); }
+
+.lv-actions {
+  display: inline-flex;
+  gap: var(--s1);
+  flex: none;
+  flex-wrap: wrap;
+}
+
+.lv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-button-secondaryBackground, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lv-btn:hover { background: var(--vscode-button-secondaryHoverBackground, var(--hover)); }
+.lv-btn[aria-pressed="true"] { border-color: var(--vscode-focusBorder); color: var(--vscode-focusBorder); }
+
+/* ---------- 日志主体 ---------- */
+.lv-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size, 12px);
+  line-height: 1.5;
+  padding: 2px 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 62px 48px 52px minmax(0, 1fr);
+  gap: var(--s2);
+  padding: 0 var(--s3);
+  align-items: start;
+}
+
+.row:hover { background: var(--hover); }
+
+.t {
+  color: var(--muted);
+  font-size: 11px;
+  padding-top: 1px;
+}
+
+.lvl {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding-top: 2px;
+}
+
+.pid {
+  font-size: 10px;
+  color: var(--muted);
+  padding-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg {
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-width: 0;
+}
+
+body.nowrap .msg { white-space: pre; word-break: normal; }
+body.nowrap .lv-body { overflow-x: auto; }
+
+.src {
+  display: inline-block;
+  font-size: 9px;
+  padding: 0 4px;
+  margin-right: 5px;
+  border-radius: 2px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  vertical-align: 1px;
+}
+
+.lv-debug .msg { color: var(--muted); }
+.lv-info .lvl { color: var(--vscode-charts-blue, #3794ff); }
+.lv-warn { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.lv-warn .lvl { color: var(--warn); }
+.lv-error { background: color-mix(in srgb, var(--err) 9%, transparent); }
+.lv-error .lvl { color: var(--err); }
+.lv-error .msg { color: var(--err); }
+
+mark {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* ---------- 底部状态 ---------- */
+.lv-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: 3px var(--s3);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  flex: none;
+}
+
+.lv-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  max-width: 38%;
+}
+
+/* 需求 3/4：底部面板固定展示 代理 / 出口 IP·运营商 / Gemini 结论 */
+.lv-env {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lv-stats { flex: none; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  right: var(--s3);
+  bottom: calc(var(--s3) + 24px);
+  z-index: 10;
+  max-width: 60%;
+  padding: 6px 10px;
+  font-size: 11px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--vscode-notifications-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-notifications-foreground, var(--vscode-foreground));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.toast.warn { border-color: var(--warn); }
+.toast.error { border-color: var(--err); }
+
+@media (max-width: 520px) {
+  .row { grid-template-columns: 54px 44px minmax(0, 1fr); }
+  .pid { display: none; }
+  .lv-btn span { display: none; }
+}

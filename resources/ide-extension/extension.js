@@ -5,11 +5,13 @@
  * Antigravity Proxy IDE 插件入口（组装层：只负责依赖装配、命令注册与生命周期，具体逻辑在 lib/）。
  *
  * 功能：
- * - 底部状态栏：展示补丁/配置/代理连通状态，点击打开配置面板
+ * - 底部状态栏：补丁/配置/代理/连通 + 代理出口 IP·运营商 + Gemini 可用性（可分别关闭）
+ * - 左侧活动栏 WebviewView：状态卡片、出口 IP、Gemini 三层结论、实时日志、插件更新、快捷操作
+ * - 底部面板「代理日志」：级别筛选、关键字搜索高亮、暂停/清空/复制、打开文件/目录
  * - 配置面板：可视化编辑安装目录下的 config.json，保存后一键重启 IDE 生效
  * - 补丁守护：IDE 更新清除 version.dll / config.json 后，启动时自动从插件内置副本恢复
- * - 首次引导：首次启动时若当前代理不可用，自动打开设置并扫描本机可用代理
- * - 多语言：简体中文 / English / Русский，默认跟随 IDE 显示语言，可在设置中覆盖
+ * - 插件自更新：本地代理 → GitHub 镜像 → 直连，下载后校验 SHA256，再安装并提示重载
+ * - 多语言：简体中文 / English / Русский
  */
 
 const vscode = require("vscode");
@@ -22,6 +24,11 @@ const { PatchGuard } = require("./lib/patchGuard");
 const { ProxyStatusBar } = require("./lib/statusBar");
 const { ProxySidebarProvider } = require("./lib/sidebarView");
 const { ConfigPanel } = require("./lib/configPanel");
+const { LogService } = require("./lib/logService");
+const { LogViewProvider } = require("./lib/logView");
+const { IpInfoService } = require("./lib/ipInfo");
+const { checkGemini } = require("./lib/geminiCheck");
+const { ExtensionUpdater } = require("./lib/updater");
 const { probeProxy } = require("./lib/proxyProbe");
 const { scanLocalProxies } = require("./lib/proxyScan");
 const { restartIde } = require("./lib/restart");
@@ -46,7 +53,7 @@ function activate(context) {
   if (!info.supported) {
     // 非 Windows：代理补丁为 version.dll 劫持方案，不适用；命令给出明确说明而不是静默失败
     const unsupported = () => vscode.window.showInformationMessage(tr("ext.unsupported"));
-    for (const id of ["openSettings", "testProxy", "repairPatch", "restartIde", "openLogs", "scanProxy"]) {
+    for (const id of ["openSettings", "testProxy", "repairPatch", "restartIde", "openLogs", "scanProxy", "openLogsWindow", "checkGemini", "refreshIp", "checkUpdate", "focusSidebar"]) {
       context.subscriptions.push(vscode.commands.registerCommand(`${CONFIG_SECTION}.${id}`, unsupported));
     }
     return;
@@ -56,16 +63,39 @@ function activate(context) {
   const guard = new PatchGuard(info, store, context.extensionPath, tr);
   const iconUri = vscode.Uri.joinPath(context.extensionUri, "media", "icon.png");
   const statusBar = new ProxyStatusBar(vscode, tr, iconUri);
-  const sidebar = new ProxySidebarProvider(vscode, tr);
-  context.subscriptions.push(
-    statusBar,
-    sidebar,
-    vscode.window.registerTreeDataProvider("antigravityProxy.sidebar", sidebar),
-  );
+  const extVersion = String(context.extension?.packageJSON?.version || "0.0.0");
+
+  // ---- 日志：插件事件 + DLL 文件日志合并成一条可订阅的实时流 ----
+  const logService = new LogService({ installDir: info.installDir, t: tr });
+  logService.start();
+  context.subscriptions.push({ dispose: () => logService.dispose() });
+  /** @param {"debug" | "info" | "warn" | "error"} level @param {string} text */
+  const log = (level, text) => logService.add(level, text);
+  log("info", `插件已激活 v${extVersion}`);
+
+  /** 从 config.json 读取当前代理（缺失/禁用返回 null） */
+  const getProxy = () => {
+    const read = store.read();
+    if (read.status !== "ok") return null;
+    const proxy = Core.normalizeForm(read.raw).proxy;
+    return proxy && proxy.port > 0 ? proxy : null;
+  };
+
+  /** 出口 IP 查询（代理优先，直连兜底） */
+  const ipInfo = new IpInfoService({ getProxy, t: tr });
+  /** @type {{ checking: boolean, result: any, error: string }} */
+  let geminiState = { checking: false, result: null, error: "" };
+
+  /** 插件自更新 */
+  const updater = new ExtensionUpdater({ vscode, context, info, t: tr, log, getProxy });
 
   let sessionPendingRestart = false;
   /** @type {import("./lib/proxyProbe").ProbeResult | null} */
   let lastReach = null;
+  /** @type {ProxySidebarProvider | undefined} */
+  let sidebar;
+  /** @type {LogViewProvider | undefined} */
+  let logView;
 
   const isPendingRestart = () => {
     if (sessionPendingRestart) return true;
@@ -76,7 +106,7 @@ function activate(context) {
     }
   };
 
-  /** 刷新底部状态栏与左侧活动栏视图；probe=true 时顺带做一次轻量 TCP 连通检测并展示探测动效 */
+  /** 刷新底部状态栏与左侧视图；probe=true 时顺带做一次轻量 TCP 连通检测并展示探测动效 */
   const refresh = async (probe = false) => {
     const enabled = vscode.workspace.getConfiguration(CONFIG_SECTION).get("statusBar.enabled", true);
     const read = store.read();
@@ -88,18 +118,24 @@ function activate(context) {
       reach: proxy && proxy.port > 0 ? lastReach : null,
       pendingRestart: isPendingRestart(),
       missingTargets: read.status === "ok" ? findMissingTargets(read.raw) : [],
+      egress: ipInfo.state,
+      gemini: geminiState,
+      update: updater.getState(),
+      version: extVersion,
     });
     if (probe && proxy && proxy.port > 0) {
       const probingModel = { ...baseModel(), probing: true };
-      sidebar.render(probingModel);
+      sidebar?.render(probingModel);
       if (enabled) statusBar.render(probingModel);
       else statusBar.hide();
       lastReach = await probeProxy(proxy, { tcpOnly: true, timeoutMs: 3000, t: tr });
     }
     const finalModel = baseModel();
-    sidebar.render(finalModel);
+    sidebar?.render(finalModel);
     if (enabled) statusBar.render(finalModel);
     else statusBar.hide();
+    // 底部日志窗口的环境条（代理 / 出口 IP / Gemini）随状态刷新
+    logView?.updateEnv();
   };
 
   /** 状态栏悬浮提示「一键补齐」：把缺少的后端进程写入 target_processes（写前自动备份），提示重启生效 */
@@ -160,6 +196,52 @@ function activate(context) {
     t: tr,
   });
 
+  const openLogsFolder = async () => {
+    if (fs.existsSync(info.logsDir)) await vscode.env.openExternal(vscode.Uri.file(info.logsDir));
+    else void vscode.window.showWarningMessage(tr("ext.logsNotFound", { path: info.logsDir }));
+  };
+
+  /** 完整隧道探测（命令/面板用） */
+  const runTestProxy = async () => {
+    const read = store.read();
+    if (read.status !== "ok") {
+      void vscode.window.showWarningMessage(tr("ext.testConfigBad"), tr("common.openSettings"))
+        .then((p) => p && openSettings());
+      return;
+    }
+    const proxy = Core.normalizeForm(read.raw).proxy;
+    const r = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: tr("ext.testProgress", { url: `${proxy.type}://${proxy.host}:${proxy.port}` }) },
+      () => probeProxy(proxy, { t: tr }),
+    );
+    lastReach = r;
+    void refresh();
+    if (r.ok) void vscode.window.showInformationMessage(tr("ext.testOk", { message: r.message, ms: r.latencyMs }));
+    else void vscode.window.showWarningMessage(tr("ext.testFail", { message: r.message }), tr("common.openSettings")).then((p) => p && openSettings());
+  };
+
+  /**
+   * 执行一次 Gemini / Antigravity 可用性检测。
+   * 说明：三层探测（网络 / Gemini API 区域 / loadCodeAssist + Antigravity 日志证据）见 lib/geminiCheck.js。
+   * @param {boolean} [silent]
+   */
+  const runGeminiCheck = async (silent = true) => {
+    if (geminiState.checking) return geminiState.result;
+    geminiState = { ...geminiState, checking: true };
+    await refresh(false);
+    try {
+      const result = await checkGemini({ proxy: getProxy(), t: tr, appDataDir: process.env.APPDATA });
+      geminiState = { checking: false, result, error: "" };
+      log(result.state === "blocked" ? "warn" : "info", `Gemini 检测完成：${result.state}`);
+    } catch (e) {
+      geminiState = { checking: false, result: null, error: /** @type {Error} */ (e).message || String(e) };
+      log("warn", `Gemini 检测失败：${geminiState.error}`);
+    }
+    await refresh(false);
+    if (!silent && !geminiState.result) void vscode.window.showWarningMessage(geminiState.error);
+    return geminiState.result;
+  };
+
   const panelDeps = () => ({
     vscode,
     extensionUri: context.extensionUri,
@@ -179,6 +261,68 @@ function activate(context) {
   });
   const openSettings = () => ConfigPanel.show(panelDeps());
 
+  const openLogsWindow = () => logView?.reveal();
+
+  /** 侧边栏动作表：webview 只发 action 名称，具体行为都在宿主侧 */
+  const sidebarActions = {
+    openSettings,
+    scanProxy: () => ConfigPanel.show(panelDeps(), { intent: "scan" }),
+    testProxy: runTestProxy,
+    repairPatch: () => repair(),
+    restartIde: restart,
+    openLogs: openLogsFolder,
+    openLogWindow: openLogsWindow,
+    refreshIp: () => ipInfo.get({ force: true }),
+    checkGemini: () => runGeminiCheck(false),
+    checkUpdate: () => updater.check({ manual: true }),
+    applyUpdate: () => updater.downloadAndInstall(),
+    reloadWindow: () => vscode.commands.executeCommand("workbench.action.reloadWindow"),
+    refreshLogs: () => logService.rescan(),
+  };
+
+  const getSettings = () => {
+    const cfg = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    return {
+      geminiIntervalSeconds: Number(cfg.get("gemini.intervalSeconds", 300)),
+      egressIntervalSeconds: Number(cfg.get("egress.refreshIntervalSeconds", 1800)),
+      statusProbeSeconds: Number(cfg.get("statusBar.probeIntervalSeconds", 60)),
+    };
+  };
+
+  // ---- 左侧栏（WebviewView）与日志窗口（底部面板 WebviewView） ----
+  sidebar = new ProxySidebarProvider({
+    vscode,
+    extensionUri: context.extensionUri,
+    logService,
+    t: tr,
+    lang: currentLang,
+    version: extVersion,
+    getSettings,
+    actions: sidebarActions,
+  });
+  logView = new LogViewProvider({
+    vscode,
+    extensionUri: context.extensionUri,
+    logService,
+    t: tr,
+    lang: currentLang,
+    getEnv: () => ({ proxy: getProxy(), egress: ipInfo.state, gemini: geminiState }),
+  });
+
+  context.subscriptions.push(
+    statusBar,
+    sidebar,
+    logView,
+    vscode.window.registerWebviewViewProvider("antigravityProxy.sidebar", sidebar, { webviewOptions: { retainContextWhenHidden: false } }),
+    vscode.window.registerWebviewViewProvider("antigravityProxy.logs", logView, { webviewOptions: { retainContextWhenHidden: false } }),
+  );
+
+  // 服务状态变化 → 刷新模型（不触发网络探测）
+  context.subscriptions.push(ipInfo.onDidChange(() => void refresh(false)));
+  context.subscriptions.push(updater.onDidChange(() => void refresh(false)));
+  context.subscriptions.push({ dispose: () => updater.dispose() });
+
+  // ---- 命令 ----
   context.subscriptions.push(
     vscode.commands.registerCommand(`${CONFIG_SECTION}.openSettings`, openSettings),
     vscode.commands.registerCommand(`${CONFIG_SECTION}.scanProxy`, () => ConfigPanel.show(panelDeps(), { intent: "scan" })),
@@ -186,49 +330,61 @@ function activate(context) {
     vscode.commands.registerCommand(`${CONFIG_SECTION}.repairPatch`, () => repair()),
     // 仅供状态栏悬浮提示链接调用（未在 package.json 声明，不出现在命令面板）
     vscode.commands.registerCommand(`${CONFIG_SECTION}.fixTargets`, fixTargets),
-    vscode.commands.registerCommand(`${CONFIG_SECTION}.openLogs`, async () => {
-      if (fs.existsSync(info.logsDir)) await vscode.env.openExternal(vscode.Uri.file(info.logsDir));
-      else void vscode.window.showWarningMessage(tr("ext.logsNotFound", { path: info.logsDir }));
-    }),
-    vscode.commands.registerCommand(`${CONFIG_SECTION}.testProxy`, async () => {
-      const read = store.read();
-      if (read.status !== "ok") {
-        void vscode.window.showWarningMessage(tr("ext.testConfigBad"), tr("common.openSettings"))
-          .then((p) => p && openSettings());
-        return;
-      }
-      const proxy = Core.normalizeForm(read.raw).proxy;
-      const r = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: tr("ext.testProgress", { url: `${proxy.type}://${proxy.host}:${proxy.port}` }) },
-        () => probeProxy(proxy, { t: tr }),
-      );
-      lastReach = r;
-      void refresh();
-      if (r.ok) void vscode.window.showInformationMessage(tr("ext.testOk", { message: r.message, ms: r.latencyMs }));
-      else void vscode.window.showWarningMessage(tr("ext.testFail", { message: r.message }), tr("common.openSettings")).then((p) => p && openSettings());
-    }),
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.openLogs`, openLogsFolder),
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.testProxy`, runTestProxy),
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.focusSidebar`, () => vscode.commands.executeCommand("workbench.view.extension.antigravityProxy")),
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.openLogsWindow`, openLogsWindow),
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.checkGemini`, () => runGeminiCheck(false)),
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.refreshIp`, () => ipInfo.get({ force: true })),
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.checkUpdate`, () => updater.check({ manual: true })),
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.applyUpdate`, () => updater.downloadAndInstall()),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(`${CONFIG_SECTION}.language`)) {
         t = I18n.createT(currentLang());
         ConfigPanel.relocalizeIfOpen();
+        sidebar?.relocalize();
+        logView?.relocalize();
+        void refresh(true);
       }
       if (e.affectsConfiguration(CONFIG_SECTION)) {
-        scheduleProbe();
-        void refresh(true);
+        scheduleTimers();
+        updater.stop();
+        updater.start();
+        void refresh(false);
       }
     }),
   );
 
-  // 周期性轻量检测（间隔可配置；0 表示仅启动与保存后检测）
+  // ---- 定时任务：状态栏轻量探测 / 出口 IP / Gemini 检测 ----
   /** @type {NodeJS.Timeout | undefined} */
-  let timer;
-  const scheduleProbe = () => {
-    if (timer) clearInterval(timer);
-    const sec = Number(vscode.workspace.getConfiguration(CONFIG_SECTION).get("statusBar.probeIntervalSeconds", 60));
-    timer = sec > 0 ? setInterval(() => void refresh(true), Math.max(10, sec) * 1000) : undefined;
+  let statusTimer;
+  /** @type {NodeJS.Timeout | undefined} */
+  let egressTimer;
+  /** @type {NodeJS.Timeout | undefined} */
+  let geminiTimer;
+  const scheduleTimers = () => {
+    if (statusTimer) clearInterval(statusTimer);
+    if (egressTimer) clearInterval(egressTimer);
+    if (geminiTimer) clearInterval(geminiTimer);
+    const s = getSettings();
+    // 状态栏端口探测：间隔可配置；0 表示仅启动与保存后检测（保持原有行为）
+    statusTimer = s.statusProbeSeconds > 0 ? setInterval(() => void refresh(true), Math.max(10, s.statusProbeSeconds) * 1000) : undefined;
+    // 出口 IP：免费额度有限，最小 60 秒；0 表示仅手动刷新
+    egressTimer = s.egressIntervalSeconds > 0 ? setInterval(() => void ipInfo.get({ force: true }), Math.max(60, s.egressIntervalSeconds) * 1000) : undefined;
+    // Gemini：默认 5 分钟，最小 60 秒；0 表示关闭定时检测（仍可手动）
+    geminiTimer = s.geminiIntervalSeconds > 0 ? setInterval(() => void runGeminiCheck(), Math.max(60, s.geminiIntervalSeconds) * 1000) : undefined;
+    for (const timer of [statusTimer, egressTimer, geminiTimer]) {
+      if (timer && typeof timer.unref === "function") timer.unref();
+    }
   };
-  scheduleProbe();
-  context.subscriptions.push({ dispose: () => timer && clearInterval(timer) });
+  scheduleTimers();
+  context.subscriptions.push({
+    dispose: () => {
+      if (statusTimer) clearInterval(statusTimer);
+      if (egressTimer) clearInterval(egressTimer);
+      if (geminiTimer) clearInterval(geminiTimer);
+    },
+  });
 
   /**
    * 首次引导（只执行一次）：当前代理可用 → 轻提示；不可用 → 自动打开设置并扫描本机代理。
@@ -273,6 +429,16 @@ function activate(context) {
   // 状态栏立即展示（含一次轻量连通检测），不等待任何提示框
   void refresh(true);
   void maybeOnboard();
+
+  // 出口 IP 与 Gemini 检测延后执行：避开启动高峰，且保证激活流程尽快返回
+  const startupTimers = [
+    setTimeout(() => void ipInfo.get(), 2500),
+    setTimeout(() => void runGeminiCheck(), 4000),
+  ];
+  context.subscriptions.push({ dispose: () => { for (const timer of startupTimers) clearTimeout(timer); } });
+
+  // 插件自更新：内部按设置延迟与间隔调度（默认 20s 后首次检查，之后每 6h）
+  updater.start();
 }
 
 function deactivate() {}

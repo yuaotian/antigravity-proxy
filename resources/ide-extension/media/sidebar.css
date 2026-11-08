@@ -1,0 +1,499 @@
+/*
+ * 左侧活动栏 Webview 样式
+ * 原则：只用 --vscode-* 主题变量与 codicons；4/8px 间距体系；窄宽度优先的信息密度；
+ *       状态色全部取自当前主题（深色/浅色/高对比度一致），不使用固定品牌色。
+ */
+
+:root {
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --border: var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.22)));
+  --muted: var(--vscode-descriptionForeground);
+  --ok: var(--vscode-testing-iconPassed, var(--vscode-charts-green, #73c991));
+  --warn: var(--vscode-editorWarning-foreground, #cca700);
+  --err: var(--vscode-errorForeground, #f48771);
+  --hover: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.12));
+  --radius: 4px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: transparent;
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+[hidden] { display: none !important; }
+
+.sb {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ---------- 头部 ---------- */
+.sb-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 10px var(--s3);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.sb-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius);
+  flex: none;
+}
+
+.sb-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.sb-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-ver {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.9;
+}
+
+.chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.chip.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, transparent); }
+
+/* ---------- 滚动区 ---------- */
+.sb-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--s2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.sb-scroll::-webkit-scrollbar { width: 10px; }
+.sb-scroll::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background);
+  border-radius: 5px;
+}
+
+/* ---------- 卡片 ---------- */
+.card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px 9px;
+  background: var(--vscode-sideBar-background, transparent);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.card-head > span:first-child { flex: 1; min-width: 0; }
+
+.mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+}
+
+.mini:hover { background: var(--hover); color: var(--vscode-foreground); }
+.mini.active { color: var(--vscode-focusBorder); }
+
+/* ---------- 状态行 ---------- */
+.kv {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 21px;
+  font-size: 12px;
+}
+
+.kv-key {
+  color: var(--muted);
+  flex: none;
+}
+
+.kv-value {
+  margin-left: auto;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 72%;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--muted);
+  opacity: 0.75;
+}
+
+.dot.ok { background: var(--ok); opacity: 1; }
+.dot.warn { background: var(--warn); opacity: 1; }
+.dot.err { background: var(--err); opacity: 1; }
+.dot.spin {
+  background: transparent;
+  border: 2px solid var(--muted);
+  border-top-color: transparent;
+  animation: agp-spin 0.9s linear infinite;
+}
+
+@keyframes agp-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .dot.spin { animation: none; }
+}
+
+/* ---------- 出口 IP ---------- */
+.ip-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ip-addr {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ip-org {
+  font-size: 12px;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ip-loc {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.meta {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 徽标 ---------- */
+.badge {
+  flex: none;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.badge.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+.badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.badge.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 50%, transparent); }
+.badge.spin { opacity: 0.75; }
+
+/* ---------- 提示块 ---------- */
+.hint {
+  font-size: 10.5px;
+  line-height: 1.4;
+  margin-top: 5px;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+  border-left: 2px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hint.warn { color: var(--warn); }
+.hint.err {
+  color: var(--err);
+  border-left-color: var(--err);
+  background: color-mix(in srgb, var(--err) 10%, transparent);
+}
+
+/* ---------- 更新 ---------- */
+.upd-status {
+  font-size: 11.5px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.upd-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 1px 8px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn.primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.btn.primary:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+
+.btn.ghost {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.btn.ghost:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- 日志 ---------- */
+.logs-card { padding-bottom: 6px; }
+
+.logs-tools {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.log-level {
+  flex: none;
+  max-width: 76px;
+  font-size: 11px;
+  padding: 2px;
+  border-radius: 3px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border, var(--border));
+  outline: none;
+}
+
+.log-search {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--border));
+  outline: none;
+}
+
+.log-search:focus { border-color: var(--vscode-focusBorder); }
+
+.logs-list {
+  height: 176px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 2px 0;
+}
+
+.log-row {
+  display: flex;
+  gap: 5px;
+  align-items: flex-start;
+  padding: 1px 2px;
+}
+
+.log-row:hover { background: var(--hover); }
+
+.log-time {
+  flex: none;
+  color: var(--muted);
+  font-size: 9.5px;
+  padding-top: 1px;
+  min-width: 44px;
+}
+
+.log-lv {
+  flex: none;
+  width: 30px;
+  font-size: 9px;
+  color: var(--muted);
+  padding-top: 1px;
+  letter-spacing: 0.02em;
+}
+
+.lv-warn .log-lv { color: var(--warn); }
+.lv-error .log-lv { color: var(--err); }
+.lv-debug .log-text { color: var(--muted); }
+
+.log-text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-src {
+  font-size: 9px;
+  padding: 0 3px;
+  margin-right: 4px;
+  border-radius: 2px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.logs-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.log-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-count { flex: none; }
+
+mark {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* ---------- 快捷操作 ---------- */
+.actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding-bottom: var(--s2);
+}
+
+.act {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+  font-size: 11px;
+  text-align: left;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.act:hover { background: var(--hover); border-color: var(--vscode-focusBorder); }
+.act span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  left: var(--s2);
+  right: var(--s2);
+  bottom: var(--s2);
+  z-index: 10;
+  padding: 6px 8px;
+  font-size: 11px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--vscode-notifications-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-notifications-foreground, var(--vscode-foreground));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.toast.warn { border-color: var(--warn); }
+.toast.error { border-color: var(--err); }
+
+/* 极窄侧栏：隐藏标签文字，保留状态点与值，避免换行 */
+@media (max-width: 240px) {
+  .kv-key { display: none; }
+  .act span { display: none; }
+  .act { justify-content: center; }
+}

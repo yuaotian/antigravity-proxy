@@ -34,6 +34,9 @@ test("源码中引用的词条 key 全部存在", () => {
   const files = [
     "extension.js",
     "media/panel.js",
+    // 新增的 Webview 前端同样使用共享词条，必须纳入校验（否则漏译只有运行时才暴露）
+    "media/sidebar.js",
+    "media/logview.js",
     ...fs.readdirSync(path.join(root, "lib")).map((f) => `lib/${f}`),
   ];
   const missing = [];

@@ -51,13 +51,28 @@
           "title": "%view.containerTitle%",
           "icon": "media/activity-icon.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "antigravityProxyLogs",
+          "title": "%view.logsContainerTitle%",
+          "icon": "media/activity-icon.svg"
+        }
       ]
     },
     "views": {
       "antigravityProxy": [
         {
           "id": "antigravityProxy.sidebar",
+          "type": "webview",
           "name": "%view.statusTitle%"
+        }
+      ],
+      "antigravityProxyLogs": [
+        {
+          "id": "antigravityProxy.logs",
+          "type": "webview",
+          "name": "%view.logsTitle%"
         }
       ]
     },
@@ -77,6 +92,11 @@
           "command": "antigravityProxy.testProxy",
           "when": "view == antigravityProxy.sidebar",
           "group": "navigation@3"
+        },
+        {
+          "command": "antigravityProxy.checkGemini",
+          "when": "view == antigravityProxy.sidebar",
+          "group": "navigation@4"
         }
       ]
     },
@@ -113,6 +133,30 @@
         "command": "antigravityProxy.openLogs",
         "title": "%command.openLogs%",
         "category": "Antigravity Proxy"
+      },
+      {
+        "command": "antigravityProxy.openLogsWindow",
+        "title": "%command.openLogsWindow%",
+        "category": "Antigravity Proxy",
+        "icon": "$(window)"
+      },
+      {
+        "command": "antigravityProxy.checkGemini",
+        "title": "%command.checkGemini%",
+        "category": "Antigravity Proxy",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "antigravityProxy.refreshIp",
+        "title": "%command.refreshIp%",
+        "category": "Antigravity Proxy",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "antigravityProxy.checkUpdate",
+        "title": "%command.checkUpdate%",
+        "category": "Antigravity Proxy",
+        "icon": "$(cloud-download)"
       }
     ],
     "configuration": {
@@ -150,6 +194,69 @@
           "default": 60,
           "minimum": 0,
           "description": "%config.probeInterval%"
+        },
+        "antigravityProxy.statusBar.showEgress": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.showEgress%"
+        },
+        "antigravityProxy.statusBar.showGemini": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.showGemini%"
+        },
+        "antigravityProxy.egress.refreshIntervalSeconds": {
+          "type": "number",
+          "default": 1800,
+          "minimum": 0,
+          "description": "%config.egressInterval%"
+        },
+        "antigravityProxy.gemini.intervalSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "%config.geminiInterval%"
+        },
+        "antigravityProxy.update.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.updateEnabled%"
+        },
+        "antigravityProxy.update.mode": {
+          "type": "string",
+          "default": "notify",
+          "enum": [
+            "notify",
+            "auto"
+          ],
+          "enumDescriptions": [
+            "%config.updateMode.notify%",
+            "%config.updateMode.auto%"
+          ],
+          "description": "%config.updateMode%"
+        },
+        "antigravityProxy.update.intervalHours": {
+          "type": "number",
+          "default": 6,
+          "minimum": 1,
+          "description": "%config.updateInterval%"
+        },
+        "antigravityProxy.update.delaySeconds": {
+          "type": "number",
+          "default": 20,
+          "minimum": 0,
+          "description": "%config.updateDelay%"
+        },
+        "antigravityProxy.update.mirrors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "https://gh-proxy.com/",
+            "https://wget.la/"
+          ],
+          "description": "%config.updateMirrors%"
         }
       }
     }

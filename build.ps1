@@ -825,9 +825,12 @@ if (Test-Path $extSrc) {
 
 Antigravity-Proxy 的 IDE 配套插件：
 
-- **状态栏**：显示补丁 / 配置 / 代理连通状态，点击打开配置面板
+- **状态栏**：补丁 / 配置 / 代理连通 / 出口 IP·运营商 / Gemini 可用性
+- **左侧栏**：状态卡片、代理出口 IP、Gemini 三层结论、实时日志、插件更新
+- **日志窗口**：底部面板，支持级别筛选、关键字搜索、暂停与复制
 - **配置面板**：可视化编辑安装目录下的 ``config.json``，保存后一键重启 IDE 生效
 - **补丁守护**：IDE 自动更新清除 ``version.dll`` / ``config.json`` 后，启动时自动恢复
+- **自更新**：本地代理 → GitHub 镜像 → 直连检查新版本，下载后校验 SHA256 再安装
 
 项目主页：https://github.com/yuaotian/antigravity-proxy
 "@

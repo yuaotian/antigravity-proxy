@@ -1,4 +1,4 @@
-# IDE 插件：状态栏 + 可视化设置 + 补丁守护
+# IDE 插件：状态栏 + 可视化设置 + 实时日志 + 出口 IP/Gemini + 自更新 + 补丁守护
 
 > 适用：Windows 桌面端 Antigravity IDE（VS Code 二开，2.6.0 实测：VS Code 1.107 / Electron 39.2.3 / Node 22.21.1）。
 > 不适用：终端 CLI `agy`（无插件宿主）。
@@ -26,16 +26,29 @@ IDE 2.6.0 起后端改为内置扩展 `extensions/agy` 拉起的 `%USERPROFILE%\
 resources/shared/config-core.js     配置唯一事实源（规范化/导出/校验/JSONC），UMD
         │  构建时内联进 config-web.html；打包时复制为插件 media/config-core.js
         ▼
-extension.js                        组装层：依赖装配、命令注册、生命周期、启动期补丁守护
+extension.js                        组装层：依赖装配、命令注册、生命周期、定时器、启动期补丁守护
 lib/installInfo.js                  由 vscode.env.appRoot 推导安装目录/exe/DLL/配置路径；DLL 是否已加载
 lib/configStore.js                  config.json 读写：原子写入、写前备份（10 份）、最后可用配置
 lib/patchGuard.js                   补丁状态检测与缺失文件恢复
 lib/proxyProbe.js                   代理探测：TCP / SOCKS5(含 RFC1929 认证) / HTTP CONNECT 隧道
 lib/proxyScan.js                    本机代理扫描（多来源合并去重 → TCP 探活 → SOCKS5/HTTP 完整隧道探测）
-lib/statusBar.js                    状态模型 → 状态栏文本/配色/悬浮提示（无 IO）
+lib/httpClient.js                   HTTPS 客户端：直连 / SOCKS5 / HTTP CONNECT，重定向与超时（三处探测共用）
+lib/tunnel.js                       代理隧道握手（SOCKS5 RFC1928/1929、HTTP CONNECT Basic）
+lib/githubRelease.js                Release 解析、版本比较、按架构选 VSIX、镜像与源候选（纯逻辑）
+lib/updater.js                      自更新状态机：检查 → 下载 → SHA256 → 安装 → 提示重载
+lib/ipInfo.js                       代理出口 IP / 运营商 / 机房特征（经代理查询，失败回退直连并标注）
+lib/geminiCheck.js                  Gemini / Antigravity 三层判定（网络 / API 区域 / 会话日志与 403证据）
+lib/logTail.js                      日志发现与增量尾随（10MB 截断、跨天换文件、UTF-8 半行处理）
+lib/logService.js                   环形缓冲 + 200ms 批量广播（DLL 日志与插件事件合并）
+lib/logView.js                      底部面板日志 WebviewView + 编辑器标签页兜底
+lib/sidebarView.js                  左侧活动栏 WebviewView 宿主（状态/IP/Gemini/日志/更新）
+lib/statusBar.js                    三个状态栏条目：主状态 / 出口 IP / Gemini
+lib/webviewHtml.js                  Webview CSP/HTML 生成（nonce、资源 URI、首帧数据）
 lib/configPanel.js                  Webview 宿主侧：单例面板、CSP、消息路由、保存前二次校验
 lib/restart.js                      两段式重启器
-media/panel.js + panel.css          Webview 前端（schema 驱动表单，仅用 --vscode-* 主题变量）
+media/panel.js + panel.css          配置面板前端（schema 驱动表单，仅用 --vscode-* 主题变量）
+media/sidebar.js + sidebar.css      左侧栏前端（状态卡片 + IP + Gemini + 紧凑日志 + 操作）
+media/logview.js + logview.css      日志窗口前端（级别筛选 / 搜索高亮 / 暂停 / 复制 / 打开文件）
 media/i18n.js                       运行时三语词典（UMD，宿主与 Webview 共用）
 package.nls*.json                   命令标题 / 设置描述三语（VS Code 原生本地化）
 payload/                            构建生成：同版本 version.dll + 默认 config.json（仓库中不存在）
@@ -56,6 +69,13 @@ Webview ↔ 宿主消息：
 | Webview → 宿主 | `ready` `reload` `save` `probe` `scan` `restart` `repair` `createDefault` `openConfigFile` `openLogs` `import` `export` `copy` |
 | 宿主 → Webview | `init`（含 `lang` / `intent`） `meta` `saved` `probeResult` `scanResult` `lang` `imported` `toast` |
 
+左侧栏与日志窗口（两个 WebviewView，共用同一个 `logService`）：
+
+| 方向 | 消息 |
+|:--|:--|
+| Webview → 宿主 | `ready` `action{action}` `copy{text}`；日志窗口另有 `openFile` `openDir` |
+| 宿主 → Webview | `init{lang, model, logs, settings}` `model` `lang` `logsAppend` `logsReset` `toast`；日志窗口为 `init{lang, snapshot}` `append` `reset` `lang` `toast` |
+
 打包与分发：`build.ps1` 生成 `output\ide\antigravity-proxy.vsix`（与 `version.dll` 同目录；`System.IO.Compression` 写入 `/` 分隔条目，
 避免 PS 5.1 `Compress-Archive` 的反斜杠条目被 VS Code 拒绝）；`package-release.ps1` 把它放进 IDE 包的 `ide\`，
 并另外发布独立资产 `*-ide-extension-win-<arch>.vsix`（Release 同时发布 `SHA256SUMS.txt`）。安装途径：
@@ -65,7 +85,13 @@ DLL 侧安装提示（第 7 节）、手动「从 VSIX 安装」。
 ## 3. 状态模型与状态栏优先级
 
 ```js
-StatusModel = { patch, configStatus, proxy, reach, pendingRestart }
+StatusModel = {
+  patch, configStatus, proxy, reach, pendingRestart, missingTargets,
+  egress,          // IpInfoService.state：出口 IP / 运营商 / 机房特征 / 来源（proxy|direct）
+  gemini,          // { checking, result }：三层判定结果与置信度
+  update,          // ExtensionUpdater.state：idle/checking/available/installing/installed/error
+  version,         // 当前插件版本（用于更新卡片）
+}
 ```
 
 状态栏一次只展示“最需要处理”的一项，优先级自上而下：
@@ -88,7 +114,50 @@ StatusModel = { patch, configStatus, proxy, reach, pendingRestart }
 - **连通检测**：状态栏只做轻量 TCP 检测（间隔 `statusBar.probeIntervalSeconds`，最小 10 秒，0 为仅启动/保存后）；
   面板“测试连接”与命令 `测试代理连接` 做完整隧道检测（握手 → 认证 → CONNECT `www.gstatic.com:443`），
   失败时按阶段（config/tcp/handshake/auth/tunnel）以当前界面语言给出原因。
-- 无障碍：状态栏项设置 `accessibilityInformation`（role=button，朗读完整状态与“点击打开代理设置”）。
+- 无障碍：三个状态栏项都设置 `accessibilityInformation`（role=button，朗读完整状态与操作提示）。
+
+### 3.1 新增的两个状态栏条目
+
+| 条目 | 内容 | 点击 | 关闭方式 |
+|:--|:--|:--|:--|
+| 出口 IP（priority 99） | `$(globe) 202.156.27.9 · StarHub`，悬浮卡片含 ASN/位置/来源/机房提示/刷新 | 打开左侧栏 | `antigravityProxy.statusBar.showEgress` |
+| Gemini（priority 98） | `$(pass-filled) Gemini 可用` / `$(warning) Gemini 区域受限` / `$(question) 无法判定` | 立即检测 | `antigravityProxy.statusBar.showGemini` |
+
+主状态项的悬浮卡片同步增加「出口 IP」「Gemini」「插件更新」三行；优先级顺序不变，避免新功能盖过补丁缺失/配置异常。
+
+### 3.2 实时日志窗口
+
+- 位置：底部面板新增容器 `antigravityProxyLogs`，内含 WebviewView `antigravityProxy.logs`；命令 `打开代理日志窗口` 会切到该容器，命令不存在时自动退回编辑器标签页（`lib/logView.js` 的 `LogPanel`）。
+- 数据源：`lib/logTail.js` 按「安装目录\logs → %TEMP%\antigravity-proxy-logs」找最新 `proxy-YYYYMMDD.log`，增量读取；处理 10MB 就地截断与跨天换文件。
+- 解析：`[时间] [PID][TID] [调试|信息|警告|错误] 内容`，不支持的行按 info 保留原文；级别标记固定中文（与 `Logger.hpp` 一致）。
+- 视图：级别筛选、关键字搜索高亮、暂停/继续、自动换行、清空视图（不动文件）、复制可见、打开文件/目录；渲染上限 1000 行。
+- 左侧栏同时提供紧凑日志（最近 1500 行、渲染 400 行），与日志窗口共享同一缓冲与订阅。
+- 底部环境条：日志窗口页脚固定显示「代理地址 · 出口 IP/运营商 · Gemini 结论」，随状态刷新同步（对应需求里的「底部面板信息区」）。
+
+### 3.3 Gemini / Antigravity 可用性（为什么不是简单 ping）
+
+Google 对 Gemini API 与 Antigravity 都按出口 IP 的实时地理位置/网络类型判定；官方论坛明确 Antigravity 消费级登录要求「受支持国家 + 被识别为受支持位置的出口」，VPS/机房出口会被拒（`discuss.ai.google.dev/t/190622`）。
+Antigravity agent 链路的独立门是 `POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`，被拒时返回 `403 PERMISSION_DENIED / UNSUPPORTED_LOCATION / error_number 1008`；也存在出口 IP 正确但账号资格导致 1008 的案例（`github.com/google-antigravity/antigravity-cli/issues/1133`）。
+
+因此 `lib/geminiCheck.js` 输出三层结论，UI 分行展示，绝不把 Gemini API 可用当成 Antigravity 可用：
+
+| 层 | 探测 | 判定 |
+|:--|:--|:--|
+| 网络 | 经代理 GET `https://www.gstatic.com/generate_204` | 200/204 为可达；代理失败会自动回退直连并标记 proxy-error |
+| Gemini API 区域 | GET `https://generativelanguage.googleapis.com/v1beta/models?key=<无效 key>` | 命中 `User location is not supported` → 区域受限；命中 `API key not valid`/`API_KEY_INVALID` → 地区放行；其它 → 无法判定 |
+| Antigravity 会话 | POST `loadCodeAssist`（空 JSON）+ 读取 `%APPDATA%\Antigravity\logs\<最新>\ls-main.log` | 403/1008 或日志命中 → 明确受限；401 或无日志 → 无法判定 |
+
+- 定时：`antigravityProxy.gemini.intervalSeconds` 默认 300 秒（最小 60，0 关闭），结论同步到状态栏与左侧栏。
+- 说明：无效 key 探测只在地区放行时才会走到 key 校验，因此「key 无效」本身就是地区可用的证据；拿不到可判定信号时显示「无法判定」，不显示成功对勾。
+
+### 3.4 插件自更新
+
+- 源优先级：`config.json` 的本地代理 → GitHub 镜像（按配置顺序）→ 直连；首选源会记录在日志与更新卡片里。镜像必须是 https 且能转发 `api.github.com`（默认 `https://gh-proxy.com/`、`https://wget.la/`；后者见 `scripts/install-online.ps1` 的实测注释）。
+- 检查：`https://api.github.com/repos/yuaotian/antigravity-proxy/releases/latest`，按 `process.arch` 选择 `*-ide-extension-win-x64/x86.vsix`。
+- 校验：下载后必须与同版本的 `SHA256SUMS.txt` 匹配；拿不到清单或哈希不符一律不安装（安全优先）。
+- 安装：优先 `workbench.extensions.installExtension`（本地 VSIX URI）；失败回退 `bin\antigravity-ide.cmd --install-extension <vsix> --force`。安装完成后提示重载窗口（运行中的扩展宿主不会自动切换版本，见 `microsoft/vscode#345106`）。
+- 默认值：`update.enabled=true`、`update.mode=notify`（先提示）、启动延迟 20 秒、每 6 小时检查、同一版本只提示一次；开发版 `0.0.0` 不检查。
+- 安全边界：不下载非 https、不执行脚本、不替换安装目录的 `version.dll`、不上传本地数据。
 
 ## 4. 补丁守护：恢复策略与安全约束
 
@@ -212,7 +281,11 @@ IDE 没有“重启应用”命令（只有 `workbench.action.quit` / `reloadWin
 | `resources/shared/config-core.test.js` | 默认值、规范化回退、未知字段保留、往返一致、CIDR/IPv6/端口范围、JSONC 容错、枚举一致 |
 | `resources/ide-extension/test/proxyProbe.test.js` | SOCKS5 免认证/账密/目标拒绝、HTTP CONNECT 200/407、端口未监听、tcpOnly |
 | `resources/ide-extension/test/patchGuard.test.js` | 恢复与哈希、不覆盖已存在文件、无 payload、原子写+备份上限、DLL 加载检测、重启器**真实拉起路径** |
-| `resources/ide-extension/test/i18n.test.js` | 三语词条齐全、占位符一致、源码引用 key 存在、语言解析与回退、校验文案三语 |
+| `resources/ide-extension/test/i18n.test.js` | 三语词条齐全、占位符一致、源码（含新 Webview）引用 key 存在、语言解析与回退、校验文案三语 |
+| `resources/ide-extension/test/githubRelease.test.js` | 版本比较、Release 解析、按架构选 VSIX、镜像拼接、SHA256SUMS 解析 |
+| `resources/ide-extension/test/logTail.test.js` | 日志行解析、尾部回放、追加尾随、10MB 截断重置、跨目录选最新、广播服务 |
+| `resources/ide-extension/test/ipInfo.test.js` | org 拆分、机房关键字、ipinfo 响应解析与非法响应 |
+| `resources/ide-extension/test/geminiCheck.test.js` | Gemini API 分类、loadCodeAssist 分类、Antigravity 日志证据扫描 |
 | `resources/ide-extension/test/proxyScan.test.js` | 代理 URL / 系统代理串解析；伪造仅 SOCKS5、仅 HTTP 服务与关闭端口，验证排序、来源合并、无结果 |
 | `tests/test_ide_extension.cpp`（ctest） | DLL 侧：主进程判定、命令行参数、product.json `dataFolderName`、extensions.json 查找 |
 
@@ -254,3 +327,8 @@ IDE 没有“重启应用”命令（只有 `workbench.action.quit` / `reloadWin
 - 首次引导每个 profile 只执行一次；之后可用命令「扫描本机代理」重新扫描。
 - 通过 doctor / 在线安装部署时由脚本直接安装插件，不经过 DLL 侧提示；只装了 DLL 时的在线安装需要能访问 GitHub（经代理）或镜像。
 - 系统开启「专注助手 / 勿扰」时通知卡片不弹出，只进通知中心；90 秒内未点击即按“忽略”处理，本 DLL 版本不再提示（可手动「从 VSIX 安装」或运行 `-ExtensionOnly`）。
+- 自更新安装后必须重载窗口（或重启 IDE）才会切换到新版本；`update.mode=auto` 也不会自动刷新窗口。
+- 自更新依赖 `SHA256SUMS.txt`：拿不到清单或镜像被墙时只会提示并给 Release 链接，不会"跳过校验直接装"。
+- Gemini 三层判定是客户端近似：Antigravity 还存在账号资格/地区策略维度，服务端最终结果以 `ls-main.log` 为准；因此 UI 保留「无法判定」状态，不使用伪成功率。
+- ipinfo 免费额度有限：出口 IP 默认 30 分钟缓存、1800 秒刷新；频繁手动刷新可能触发限流。
+- 日志窗口为只读视图：清空只清视图不删文件；日志文件被 DLL 在 10MB 时就地覆盖，历史内容不可追回。
