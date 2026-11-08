@@ -75,7 +75,7 @@ media/i18n.js                        三语词条（475 条）
 | `antigravityProxy.update.mirrors` | `["https://gh-proxy.com/", "https://wget.la/"]` | 必须是可转发 api.github.com 的 https 镜像 |
 
 - 同一新版本只提示一次（`globalState` 记录）；开发版 `0.0.0` 不检查。
-- 失败时只写日志/更新卡片，不打断用户；手动检查失败会弹一次警告。
+- 失败时只写日志/侧栏头部更新图标，不打断用户；手动检查失败会弹一次警告。
 
 ## 4. 日志窗口
 
@@ -120,10 +120,11 @@ media/i18n.js                        三语词条（475 条）
 |:--|:--|:--|
 | 网络 | 经代理 GET `https://www.gstatic.com/generate_204` | 200/204 可达；代理失败自动回退直连并标记 |
 | Gemini API 区域 | GET `https://generativelanguage.googleapis.com/v1beta/models?key=<无效 key>` | 命中 `User location is not supported` → 受限；命中 `API key not valid`/`API_KEY_INVALID` → 地区放行；其它 → 无法判定 |
-| Antigravity 会话 | POST `loadCodeAssist`（空 JSON）+ 读取 `%APPDATA%\Antigravity\logs\<最新>\ls-main.log` | 403/1008 或日志命中 → 明确受限；401/无日志 → 无法判定 |
+| Antigravity 会话 | POST `loadCodeAssist`（空 JSON，匿名）+ 读取 `%APPDATA%\Antigravity\logs` 与 `%APPDATA%\Antigravity IDE\logs` 最新日志 | 日志出现 `ProjectId updated for …` / `AuthorizedQuota` / `Access token refreshed` → 已登录且未发现限制；403/1008 或日志命中 location → 明确受限；无登录证据且无日志 → `unknown`（未读到会话日志）；匿名 401 只代表“未使用登录态”，不再写成“需登录后确认” |
 
 - 定时：`antigravityProxy.gemini.intervalSeconds` 默认 300 秒（最小 60，0 关闭）；结论同步到左侧栏与状态栏**悬浮卡片**。
 - 状态栏悬浮卡片：`$(pass-filled) Gemini 可用` / `$(warning) Gemini 区域受限` / `$(question) 无法判定` / `$(error) 不可达`；代理异常单独一档。主条目文本仍只显示代理自身状态。
+- 2026-11-08 修正：此前只扫老路径 `%APPDATA%\Antigravity\logs`（本机最后更新停在 7 月），而当前 IDE 的会话日志在 `%APPDATA%\Antigravity IDE\logs\<时间>`（`cloudcode.log`、`Antigravity Cockpit` 输出）。现同时扫描两个根目录，识别 `ProjectId updated for …`、`AuthorizedQuota`、token refreshed 等强证据；本机实测显示已登录且无 location 错误。
 - 设计取舍：**不用一个对勾概括**。无法判定时保留"无法判定"，避免误导用户去改 DNS/重装。
 
 ## 6. 配置项与默认值
@@ -182,6 +183,8 @@ media/i18n.js                        三语词条（475 条）
 | 安装（隔离） | `--install-extension` 退出码 0；`extensions.json` 出现 2.6.0；旧版本目录被替换 |
 | 冷启动 | 侧栏 v2.6.0；补丁 active、配置 OK、代理 7890 可达；出口 IP `202.156.27.9 / AS4657 StarHub Ltd / Singapore`；Gemini 三层为 `204 via proxy` / `region allowed` / `needs sign-in to confirm` |
 | 状态栏 | 单一主条目（`Proxy 7890 · 157ms`）；悬浮卡片内含出口 IP `202.156.27.9 / AS4657 StarHub Ltd`、`Gemini available` 与插件更新行 |
+| 侧栏精简 | 独立「插件更新」卡片已移除，更新入口变为头部图标；语言入口为头部地球图标（中/EN/RU）；日志区加高到 `clamp(260px,34vh,400px)` |
+| 会话修正 | 扫描 `%APPDATA%\Antigravity IDE\logs` 后，Antigravity 会话由「需登录后确认」变为「已登录 · 未发现限制」，并显示 ProjectId 日志提示 |
 | 日志搜索/筛选 | 预先写入的 `AGP-TEST-20261108-MARKER` 被命中且高亮；Error 级别筛选只保留错误行 |
 | 日志窗口 | 底部面板标签存在；渲染 1000 行（总数 1805）；文件名、环境条、级别计数正确；暂停/换行/复制/打开文件按钮可用 |
 | 自更新 | 用伪造的 2.5.0 VSIX 安装后，检查到 `v2.6`；点“立即更新”经 config proxy 下载、SHA256 校验通过、`workbench.extensions.installExtension` 安装成功；`extensions.json` 变为 2.6.0；重载后侧栏 v2.6.0 |

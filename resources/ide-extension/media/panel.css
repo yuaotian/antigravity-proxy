@@ -143,6 +143,35 @@ code,
   flex: none;
 }
 
+/* 顶栏语言选择：只读展示当前语言，修改后写 VS Code 设置 */
+.lang-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-dropdown-border, var(--border));
+  border-radius: var(--radius);
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+}
+
+.lang-pick .codicon {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.lang-select {
+  max-width: 130px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+
 .dirty-badge {
   display: inline-flex;
   align-items: center;

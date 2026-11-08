@@ -190,6 +190,7 @@
     showSecret: false,
     /** @type {Set<string>} */ expandedRules: new Set(),
     activeSection: "proxy",
+    langPref: persisted.langPref || "auto",
     /** @type {null | { kind: string, key: string, params?: Record<string, any> }} */ banner: null,
   };
   const persist = () => vscode.setState({ drawer: S.drawer, drawerMode: S.drawerMode });
@@ -212,6 +213,7 @@
     switch (m.type) {
       case "init": return onInit(m);
       case "lang":
+        if (m.languagePref) S.langPref = m.languagePref;
         setLang(m.lang);
         render();
         // 连通测试结果由宿主按旧语言生成，切换语言后重新测试一次以统一语言
@@ -230,6 +232,7 @@
   /** @param {any} m */
   function onInit(m) {
     setLang(m.lang);
+    S.langPref = m.languagePref || "auto";
     S.meta = m.meta;
     S.readStatus = m.read.status;
     S.readError = m.read.error || "";
@@ -329,7 +332,22 @@
     R.btnSave = h("button", { class: "btn primary", on: { click: save }, title: T("ui.saveTitle") }, icon("save"), T("ui.save"));
     R.btnJson = h("button", { class: "icon-btn", "aria-pressed": String(S.drawer), title: T("ui.jsonTitle"), "aria-label": T("ui.jsonAria"), on: { click: toggleDrawer } }, icon("json"));
     return h("header", { class: "topbar" }, brand,
-      h("div", { class: "actions" }, R.errCount, R.dirty, R.btnRevert, R.btnSave, R.btnJson, renderMenu(true)));
+      h("div", { class: "actions" }, renderLanguage(), R.errCount, R.dirty, R.btnRevert, R.btnSave, R.btnJson, renderMenu(true)));
+  }
+
+  /** 顶部语言选择：写 VS Code 设置，宿主回发 lang 后整页按新语言重绘（保留未保存编辑） */
+  function renderLanguage() {
+    const sel = h("select", {
+      class: "lang-select",
+      "aria-label": T("ui.language"),
+      title: T("ui.language"),
+      on: { change: (e) => post({ type: "setLanguage", lang: e.target.value }) },
+    }, h("option", { value: "auto", text: T("lang.auto") }),
+      h("option", { value: "zh-cn", text: T("lang.zh") }),
+      h("option", { value: "en", text: T("lang.en") }),
+      h("option", { value: "ru", text: T("lang.ru") }));
+    sel.value = S.langPref;
+    return h("label", { class: "lang-pick", title: T("ui.language") }, icon("globe"), sel);
   }
 
   /** @param {boolean} ready */

@@ -87,9 +87,9 @@ Restart the app after deployment.
 ## Antigravity IDE Extension
 
 - **Status bar**: one single item at the bottom; click it to open the settings panel. Egress IP/ISP, the Gemini result and extension updates live in the same hover card;
-- **Sidebar**: patch/config/proxy/reachability, egress IP, three-layer Gemini result, live logs, extension update and quick actions;
-- **Log window**: built-in bottom panel with level filters, keyword search, pause/copy and open file/folder;
-- **Settings panel**: edit the proxy visually, "Test connection" before saving, old config is backed up automatically;
+- **Sidebar**: patch/config/proxy/reachability, egress IP, three-layer Gemini result, live logs and quick actions; the update entry is a compact icon in the header (no extra card), and the globe icon switches 中文 / EN / RU instantly;
+- **Log window**: built-in bottom panel with level filters, keyword search, pause/copy and open file/folder; the sidebar log area is taller (about 8 more rows);
+- **Settings panel**: edit the proxy visually, "Test connection" before saving, old config is backed up automatically; a language selector in the top bar applies immediately;
 - **First-run guide**: when the proxy is unavailable, opens the settings and scans for local proxies (current config, IDE proxy settings, system proxy, environment variables, common ports); fill in a found proxy with one click;
 - **Gemini check**: three layers (network / Gemini API region / Antigravity session), configurable interval, mirrored in the sidebar;
 - **Patch guard**: if an IDE update deletes the patch, it is restored on the next start (you will be asked to restart);

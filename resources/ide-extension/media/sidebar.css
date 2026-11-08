@@ -81,6 +81,35 @@ body {
   color: var(--muted);
 }
 
+/* 头部：语言切换 + 更新入口（均只占一个 20px 图标位） */
+.sb-lang {
+  width: auto;
+  min-width: 38px;
+  gap: 3px;
+  padding: 0 4px;
+}
+
+.sb-lang .lang-code {
+  font-size: 9.5px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.sb-upd { position: relative; }
+
+.upd-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.upd-dot.err { background: var(--err); }
+.upd-dot.ok { background: var(--ok); }
+
 .chip {
   flex: none;
   display: inline-flex;
@@ -282,53 +311,16 @@ body {
 }
 
 .hint.warn { color: var(--warn); }
+.hint.ok {
+  color: var(--ok);
+  border-left-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
 .hint.err {
   color: var(--err);
   border-left-color: var(--err);
   background: color-mix(in srgb, var(--err) 10%, transparent);
 }
-
-/* ---------- 更新 ---------- */
-.upd-status {
-  font-size: 11.5px;
-  line-height: 1.4;
-  word-break: break-word;
-}
-
-.upd-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 22px;
-  padding: 1px 8px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 2px;
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.btn.primary {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-}
-
-.btn.primary:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
-
-.btn.ghost {
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-}
-
-.btn.ghost:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
-.btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ---------- 日志 ---------- */
 .logs-card { padding-bottom: 6px; }
@@ -366,7 +358,8 @@ body {
 .log-search:focus { border-color: var(--vscode-focusBorder); }
 
 .logs-list {
-  height: 176px;
+  /* 去掉独立更新卡片后把高度还给日志：1000px 高窗口约 340px，可多显示约 8 行 */
+  height: clamp(260px, 34vh, 400px);
   overflow-y: auto;
   overflow-x: hidden;
   border-top: 1px solid var(--border);

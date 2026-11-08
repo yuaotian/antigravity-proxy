@@ -88,7 +88,7 @@ class ProxySidebarProvider {
 
   /** 语言切换：前端按 data-lang/消息重建文案（探测结果由宿主重新探测后随 model 下发） */
   relocalize() {
-    this.post({ type: "lang", lang: this.deps.lang() });
+    this.post({ type: "lang", lang: this.deps.lang(), languagePref: this.deps.getSettings().languagePref });
   }
 
   postInit() {

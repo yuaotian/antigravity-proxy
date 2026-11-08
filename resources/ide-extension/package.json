@@ -157,6 +157,12 @@
         "title": "%command.checkUpdate%",
         "category": "Antigravity Proxy",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "antigravityProxy.switchLanguage",
+        "title": "%command.switchLanguage%",
+        "category": "Antigravity Proxy",
+        "icon": "$(globe)"
       }
     ],
     "configuration": {

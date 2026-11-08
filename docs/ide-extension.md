@@ -90,7 +90,7 @@ StatusModel = {
   egress,          // IpInfoService.state：出口 IP / 运营商 / 机房特征 / 来源（proxy|direct）
   gemini,          // { checking, result }：三层判定结果与置信度
   update,          // ExtensionUpdater.state：idle/checking/available/installing/installed/error
-  version,         // 当前插件版本（用于更新卡片）
+  version,         // 当前插件版本（用于侧栏头部更新入口/状态栏悬浮卡片）
 }
 ```
 
@@ -126,6 +126,7 @@ StatusModel = {
 - 悬浮卡片内新增「出口 IP（ASN + 运营商 + 来源 + 上次时间）」「Gemini（三层结论 + 上次检测时间）」「插件更新」三行；
 - 需要常驻查看时点击状态栏或「打开侧栏」，左侧栏与日志窗口页脚仍完整展示这些信息；
 - 原 `antigravityProxy.statusBar.showEgress` / `showGemini` 设置已移除，避免出现"关不掉的空条目"。
+- 左侧栏原来单独的「插件更新」卡片也已移除：更新入口改为侧栏头部一个图标（检查中旋转、有新版本橙点、安装完成绿点），点击按状态执行检查/下载安装/重载；悬浮卡片仍保留更新行。
 
 ### 3.2 实时日志窗口
 
@@ -133,7 +134,7 @@ StatusModel = {
 - 数据源：`lib/logTail.js` 按「安装目录\logs → %TEMP%\antigravity-proxy-logs」找最新 `proxy-YYYYMMDD.log`，增量读取；处理 10MB 就地截断与跨天换文件。
 - 解析：`[时间] [PID][TID] [调试|信息|警告|错误] 内容`，不支持的行按 info 保留原文；级别标记固定中文（与 `Logger.hpp` 一致）。
 - 视图：级别筛选、关键字搜索高亮、暂停/继续、自动换行、清空视图（不动文件）、复制可见、打开文件/目录；渲染上限 1000 行。
-- 左侧栏同时提供紧凑日志（最近 1500 行、渲染 400 行），与日志窗口共享同一缓冲与订阅。
+- 左侧栏同时提供紧凑日志（最近 1500 行、渲染 400 行），与日志窗口共享同一缓冲与订阅；移除独立更新卡片后，列表高度改为 `clamp(260px, 34vh, 400px)`，1000px 高窗口约多显示 8 行。
 - 底部环境条：日志窗口页脚固定显示「代理地址 · 出口 IP/运营商 · Gemini 结论」，随状态刷新同步（对应需求里的「底部面板信息区」）。
 
 ### 3.3 Gemini / Antigravity 可用性（为什么不是简单 ping）
@@ -147,14 +148,16 @@ Antigravity agent 链路的独立门是 `POST https://daily-cloudcode-pa.googlea
 |:--|:--|:--|
 | 网络 | 经代理 GET `https://www.gstatic.com/generate_204` | 200/204 为可达；代理失败会自动回退直连并标记 proxy-error |
 | Gemini API 区域 | GET `https://generativelanguage.googleapis.com/v1beta/models?key=<无效 key>` | 命中 `User location is not supported` → 区域受限；命中 `API key not valid`/`API_KEY_INVALID` → 地区放行；其它 → 无法判定 |
-| Antigravity 会话 | POST `loadCodeAssist`（空 JSON）+ 读取 `%APPDATA%\Antigravity\logs\<最新>\ls-main.log` | 403/1008 或日志命中 → 明确受限；401 或无日志 → 无法判定 |
+| Antigravity 会话 | POST `loadCodeAssist`（空 JSON，匿名）+ 读取 `%APPDATA%\Antigravity\logs` 与 `%APPDATA%\Antigravity IDE\logs` 最新会话日志 | 日志出现 `ProjectId updated for …` / `AuthorizedQuota` / `Access token refreshed` → 已登录且未发现限制；403/1008 或日志命中 location → 明确受限；既无登录证据也无日志 → `unknown`（未读到会话日志）；匿名探测 401 只表示“无需登录态”，不再写成“需登录后确认” |
 
 - 定时：`antigravityProxy.gemini.intervalSeconds` 默认 300 秒（最小 60，0 关闭），结论同步到状态栏与左侧栏。
 - 说明：无效 key 探测只在地区放行时才会走到 key 校验，因此「key 无效」本身就是地区可用的证据；拿不到可判定信号时显示「无法判定」，不显示成功对勾。
+- 当前 IDE 的真实会话日志在 `%APPDATA%\Antigravity IDE\logs\<时间>\`（`cloudcode.log`、`window1/exthost/output_logging_*/*Antigravity Cockpit.log`）；老版本/桌面版在 `%APPDATA%\Antigravity\logs\`。旧实现只扫后者，且把匿名探测的 401 当成“需登录”，因此已登录用户也会看到误报。
+- 登录证据只认强标记（ProjectId / AuthorizedQuota / token refreshed），不把裸 `POST loadCodeAssist` 当登录成功；若旧日志里的 location 错误早于最新登录证据，则视为历史问题，不覆盖当前已登录状态。
 
 ### 3.4 插件自更新
 
-- 源优先级：`config.json` 的本地代理 → GitHub 镜像（按配置顺序）→ 直连；首选源会记录在日志与更新卡片里。镜像必须是 https 且能转发 `api.github.com`（默认 `https://gh-proxy.com/`、`https://wget.la/`；后者见 `scripts/install-online.ps1` 的实测注释）。
+- 源优先级：`config.json` 的本地代理 → GitHub 镜像（按配置顺序）→ 直连；首选源会记录在日志与侧栏头部更新图标的悬浮提示里。镜像必须是 https 且能转发 `api.github.com`（默认 `https://gh-proxy.com/`、`https://wget.la/`；后者见 `scripts/install-online.ps1` 的实测注释）。
 - 检查：`https://api.github.com/repos/yuaotian/antigravity-proxy/releases/latest`，按 `process.arch` 选择 `*-ide-extension-win-x64/x86.vsix`。
 - 校验：下载后必须与同版本的 `SHA256SUMS.txt` 匹配；拿不到清单或哈希不符一律不安装（安全优先）。
 - 安装：优先 `workbench.extensions.installExtension`（本地 VSIX URI）；失败回退 `bin\antigravity-ide.cmd --install-extension <vsix> --force`。安装完成后提示重载窗口（运行中的扩展宿主不会自动切换版本，见 `microsoft/vscode#345106`）。
@@ -194,7 +197,11 @@ Antigravity agent 链路的独立门是 `POST https://daily-cloudcode-pa.googlea
 
 - `resolveLang`：`zh*` → `zh-cn`，`ru*` → `ru`，其余 → `en`；缺词回退英文，再回退 key 本身；`{name}` 占位符替换。
 - 校验文案在 `config-core.js` 的 `VMSG` 中（`validateForm(form, lang)`），中文与原文逐字一致，字段路径不变，config-web 不受影响。
-- 切换语言即时生效：宿主重建 `t` 并刷新状态栏；已打开的面板收到 `lang` 消息后重建表单文案，测试过连接的会重新探测，
+- 手动入口（2026-11-08 新增）：
+  - 左侧栏头部地球图标显示当前语言（中 / EN / RU），点击弹出「跟随 IDE / 简体中文 / English / Русский」；
+  - 代理设置面板顶栏新增「界面语言」下拉，切换后立即写 `antigravityProxy.language`（Global），保留未保存的表单；
+  - 命令面板新增 `Antigravity Proxy: 切换界面语言`，与上述入口共用同一个 QuickPick。
+- 切换语言即时生效：宿主重建 `t` 并刷新状态栏/侧栏/日志窗口；已打开的面板收到 `lang` 消息后重建表单文案，测试过连接的会重新探测，
   让结果原因也换成新语言。
 - `test/i18n.test.js` 守护：三语词条齐全、占位符一致、源码里引用的 key 都存在、各语言校验输出。
 

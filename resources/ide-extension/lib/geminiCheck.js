@@ -52,6 +52,20 @@ const DENIED_LOCATION_MARKERS = Object.freeze([
   /not currently available in your location/i,
   /error_number\D{0,8}1008/i,
 ]);
+/**
+ * Antigravity 已登录/已拿到项目 ID 的强证据（来自 IDE 自己的日志，不是我们的匿名探测）：
+ * - CredentialStorage: ProjectId updated for <email>
+ * - CloudCode:AuthorizedQuota / Authorized quota source active（带 OAuth token 的配额检查）
+ * - Access token updated/refreshed
+ * 注意：不把裸 "POST loadCodeAssist" 当作证据，避免把匿名/失败请求误判为已登录。
+ */
+const SESSION_LOGIN_MARKERS = Object.freeze([
+  /ProjectId updated for /i,
+  /\[CloudCode:AuthorizedQuota\][^\r\n]*loadCodeAssist/i,
+  /Authorized quota source active/i,
+  /Access token (?:updated|refreshed)/i,
+  /Synced .+ to legacy key/i,
+]);
 
 const DEFAULT_T = I18n.createT("zh-cn");
 
@@ -108,77 +122,147 @@ function readTailText(filePath, maxBytes) {
 }
 
 /**
- * 在指定日志文件里找"地区不支持"的最后一次命中。
+ * 扫描一个日志文件：同时找"地区不支持"和"已登录/已拿到 ProjectId"的最后一次命中。
  * @param {string} filePath
  * @param {number} maxBytes
- * @returns {{ available: boolean, matched: boolean, line: string }}
+ * @returns {{ available: boolean, matched: boolean, line: string, loggedIn: boolean, loginLine: string }}
  */
-function scanLogFileForLocation(filePath, maxBytes = DEFAULT_LOG_MAX_BYTES) {
+function scanLogFileForEvidence(filePath, maxBytes = DEFAULT_LOG_MAX_BYTES) {
   try {
     const text = readTailText(filePath, maxBytes);
     const lines = text.split(/\r?\n/);
     /** @type {string} */
     let matchedLine = "";
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (matchesAny(LOCATION_MARKERS, lines[i])) {
-        matchedLine = lines[i].trim();
-        break;
-      }
+    /** @type {string} */
+    let loginLine = "";
+    for (let i = lines.length - 1; i >= 0 && (!matchedLine || !loginLine); i--) {
+      const line = lines[i];
+      if (!matchedLine && matchesAny(LOCATION_MARKERS, line)) matchedLine = line.trim();
+      if (!loginLine && matchesAny(SESSION_LOGIN_MARKERS, line)) loginLine = line.trim();
     }
-    return { available: true, matched: !!matchedLine, line: matchedLine };
+    return { available: true, matched: !!matchedLine, line: matchedLine, loggedIn: !!loginLine, loginLine };
   } catch {
-    return { available: false, matched: false, line: "" };
+    return { available: false, matched: false, line: "", loggedIn: false, loginLine: "" };
   }
 }
 
 /**
- * 找到最新的 Antigravity 会话日志并检查 location 错误。
- * 目录规则与 DLL 诊断一致（src/hooks/Hooks.cpp:649-688）：%APPDATA%\Antigravity\logs\<最新目录>\ls-main.log，
- * 同时兼容新版本可能出现的 language_server.log。
- *
- * @param {{ appDataDir?: string, now?: number }} [opts]
- * @returns {{ available: boolean, matched: boolean, path: string, line: string, mtimeMs: number }}
+ * 兼容旧接口：只关心 location 命中。
+ * @param {string} filePath
+ * @param {number} maxBytes
+ * @returns {{ available: boolean, matched: boolean, line: string }}
  */
-function findAntigravityLogEvidence(opts = {}) {
-  const appData = opts.appDataDir || process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
-  const logsRoot = path.join(appData, "Antigravity", "logs");
-  /** @type {{ available: boolean, matched: boolean, path: string, line: string, mtimeMs: number }} */
-  const empty = { available: false, matched: false, path: "", line: "", mtimeMs: 0 };
-  let entries = [];
+function scanLogFileForLocation(filePath, maxBytes = DEFAULT_LOG_MAX_BYTES) {
+  const e = scanLogFileForEvidence(filePath, maxBytes);
+  return { available: e.available, matched: e.matched, line: e.line };
+}
+
+/**
+ * 收集一个日志根目录下最近 3 个会话目录里的 .log 文件（限制深度/数量，避免遍历整个 exthost 输出）。
+ * @param {string} root
+ * @returns {{ path: string, mtimeMs: number }[]}
+ */
+function collectRecentLogFiles(root) {
+  /** @type {{ path: string, mtimeMs: number }[]} */
+  const out = [];
+  let dirs = [];
   try {
-    entries = fs.readdirSync(logsRoot, { withFileTypes: true }).filter((e) => e.isDirectory());
+    dirs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory());
   } catch {
-    return empty;
+    return out;
   }
-  const dirs = entries
+  const recent = dirs
     .map((e) => {
-      const p = path.join(logsRoot, e.name);
-      try {
-        return { path: p, mtimeMs: fs.statSync(p).mtimeMs };
-      } catch {
-        return { path: p, mtimeMs: 0 };
-      }
+      const p = path.join(root, e.name);
+      try { return { path: p, mtimeMs: fs.statSync(p).mtimeMs }; } catch { return { path: p, mtimeMs: 0 }; }
     })
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
     .slice(0, 3);
 
-  /** @type {{ available: boolean, matched: boolean, path: string, line: string, mtimeMs: number }} */
-  let newest = empty;
-  for (const dir of dirs) {
-    for (const name of ["ls-main.log", "language_server.log"]) {
-      const filePath = path.join(dir.path, name);
-      if (!fs.existsSync(filePath)) continue;
-      const scan = scanLogFileForLocation(filePath);
-      if (!scan.available) continue;
-      if (!newest.available) {
-        newest = { available: true, matched: false, path: filePath, line: "", mtimeMs: dir.mtimeMs };
-      }
-      if (scan.matched) {
-        return { available: true, matched: true, path: filePath, line: scan.line, mtimeMs: dir.mtimeMs };
+  const walk = (dir, depth) => {
+    if (depth > 4 || out.length >= 60) return;
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (out.length >= 60) return;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (/^(node_modules|cache|CachedData)$/i.test(e.name)) continue;
+        walk(p, depth + 1);
+      } else if (/\.log$/i.test(e.name)) {
+        try { out.push({ path: p, mtimeMs: fs.statSync(p).mtimeMs }); } catch { /* ignore */ }
       }
     }
+  };
+  for (const d of recent) walk(d.path, 0);
+  return out;
+}
+
+/**
+ * 找到最新的 Antigravity 会话日志，并区分：
+ * - location 错误（被服务端拒绝）
+ * - 已登录证据（ProjectId updated / AuthorizedQuota / token refreshed）
+ *
+ * 兼容两个日志根目录：
+ * - %APPDATA%\Antigravity\logs（老版本/桌面版）
+ * - %APPDATA%\Antigravity IDE\logs（当前 IDE；cloudcode.log、Antigravity Cockpit 输出都在这里）
+ *
+ * 只有当 location 命中不早于最近的登录证据时才判定为当前 blocked；
+ * 否则旧会话里的历史错误不应盖过刚刚成功的登录。
+ *
+ * @param {{ appDataDir?: string, now?: number }} [opts]
+ * @returns {{
+ *   available: boolean, matched: boolean, path: string, line: string, mtimeMs: number,
+ *   loggedIn: boolean, loginPath: string, loginLine: string, loginMtimeMs: number,
+ *   locationPath: string, locationLine: string, locationMtimeMs: number, filesScanned: number
+ * }}
+ */
+function findAntigravityLogEvidence(opts = {}) {
+  const appData = opts.appDataDir || process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+  const roots = [
+    path.join(appData, "Antigravity", "logs"),
+    path.join(appData, "Antigravity IDE", "logs"),
+  ];
+  /** @type {{ path: string, mtimeMs: number }[]} */
+  const files = [];
+  for (const root of roots) files.push(...collectRecentLogFiles(root));
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const candidates = files.slice(0, 24);
+
+  /** @type {{ path: string, line: string, mtimeMs: number } | null} */
+  let location = null;
+  /** @type {{ path: string, line: string, mtimeMs: number } | null} */
+  let login = null;
+  let available = false;
+  for (const f of candidates) {
+    const ev = scanLogFileForEvidence(f.path);
+    if (!ev.available) continue;
+    available = true;
+    if (ev.matched && (!location || f.mtimeMs > location.mtimeMs)) {
+      location = { path: f.path, line: ev.line, mtimeMs: f.mtimeMs };
+    }
+    if (ev.loggedIn && (!login || f.mtimeMs > login.mtimeMs)) {
+      login = { path: f.path, line: ev.loginLine, mtimeMs: f.mtimeMs };
+    }
   }
-  return newest;
+
+  // 旧日志里的历史 location 错误不能盖过更新的登录成功
+  const matched = !!location && (!login || location.mtimeMs >= login.mtimeMs);
+  return {
+    available,
+    matched,
+    path: matched && location ? location.path : (login ? login.path : ""),
+    line: matched && location ? location.line : (login ? login.line : ""),
+    mtimeMs: matched && location ? location.mtimeMs : (login ? login.mtimeMs : 0),
+    loggedIn: !!login,
+    loginPath: login ? login.path : "",
+    loginLine: login ? login.line : "",
+    loginMtimeMs: login ? login.mtimeMs : 0,
+    locationPath: location ? location.path : "",
+    locationLine: location ? location.line : "",
+    locationMtimeMs: location ? location.mtimeMs : 0,
+    filesScanned: candidates.length,
+  };
 }
 
 /**
@@ -239,7 +323,12 @@ async function checkGemini(opts = {}) {
   const logEvidence = findAntigravityLogEvidence({ appDataDir: opts.appDataDir, now: opts.now });
 
   const antigravityBlocked = lcaVerdict.state === "blocked" || logEvidence.matched;
-  const antigravityState = antigravityBlocked ? "blocked" : lcaVerdict.state === "ok" ? "ok" : "inconclusive";
+  /** @type {"ok" | "blocked" | "inconclusive" | "unknown"} */
+  let antigravityState;
+  if (antigravityBlocked) antigravityState = "blocked";
+  else if (logEvidence.loggedIn || lcaVerdict.state === "ok") antigravityState = "ok";
+  else if (logEvidence.available) antigravityState = "inconclusive";
+  else antigravityState = "unknown";
 
   const probes = [reach, api, lca];
   const anySuccess = probes.some((p) => p.ok);
@@ -259,6 +348,7 @@ async function checkGemini(opts = {}) {
   if (apiVerdict.state === "blocked") reasons.push({ code: "gemini-api-location", ok: false });
   if (lcaVerdict.state === "blocked") reasons.push({ code: "loadcodeassist-location", ok: false });
   if (logEvidence.matched) reasons.push({ code: "antigravity-log-location", ok: false });
+  if (logEvidence.loggedIn && !antigravityBlocked) reasons.push({ code: "antigravity-session-ok", ok: true });
   if (apiVerdict.reason === "region-ok") reasons.push({ code: "region-ok", ok: true });
 
   return {
@@ -277,7 +367,7 @@ async function checkGemini(opts = {}) {
     },
     geminiApi: { ok: api.ok, via: api.via, status: api.status, state: apiVerdict.state, reason: apiVerdict.reason, error: api.ok ? "" : api.error, proxyError: api.proxyError },
     loadCodeAssist: { ok: lca.ok, via: lca.via, status: lca.status, state: lcaVerdict.state, reason: lcaVerdict.reason, error: lca.ok ? "" : lca.error, proxyError: lca.proxyError },
-    antigravity: { state: antigravityState, reasons },
+    antigravity: { state: antigravityState, reasons, loggedIn: logEvidence.loggedIn },
     logEvidence,
   };
 }

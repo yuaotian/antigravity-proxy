@@ -10,6 +10,7 @@
   "command.checkGemini": "Check Gemini / Antigravity Availability",
   "command.refreshIp": "Refresh Proxy Egress IP",
   "command.checkUpdate": "Check for Extension Updates",
+  "command.switchLanguage": "Switch Language",
   "view.containerTitle": "Antigravity Proxy",
   "view.statusTitle": "Proxy Status & Actions",
   "view.logsContainerTitle": "Antigravity Proxy Logs",

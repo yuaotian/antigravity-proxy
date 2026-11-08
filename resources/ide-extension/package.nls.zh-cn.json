@@ -10,6 +10,7 @@
   "command.checkGemini": "检测 Gemini / Antigravity 可用性",
   "command.refreshIp": "刷新代理出口 IP",
   "command.checkUpdate": "检查插件更新",
+  "command.switchLanguage": "切换界面语言",
   "view.containerTitle": "Antigravity 代理",
   "view.statusTitle": "代理状态与快捷操作",
   "view.logsContainerTitle": "Antigravity 代理日志",

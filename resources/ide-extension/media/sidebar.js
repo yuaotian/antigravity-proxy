@@ -22,6 +22,9 @@
   let LANG = app.dataset.lang || "zh-cn";
   /** @type {(key: string, params?: Record<string, any>) => string} */
   let T = I18n ? I18n.createT(LANG) : (k) => k;
+  /** 头部语言按钮显示当前语言缩写；点击后由宿主弹出四选一 QuickPick */
+  const LANG_CODE = { "zh-cn": "中", en: "EN", ru: "RU" };
+  const langCode = () => LANG_CODE[LANG] || "EN";
 
   /** 本地状态（宿主模型 + 日志缓冲 + 过滤条件） */
   const state = {
@@ -32,6 +35,8 @@
     filter: { level: "all", query: "" },
     paused: false,
     autoScroll: true,
+    /** 当前日志文件（语言切换重建骨架后要恢复页脚） */
+    logFile: "",
     /** @type {Record<string, any>} */
     settings: {},
   };
@@ -111,6 +116,14 @@
     document.documentElement.lang = (I18n && I18n.HTML_LANG[LANG]) || "en";
     app.textContent = "";
 
+    const languageBtn = h("button", {
+      class: "mini sb-lang", id: "lang-btn", title: T("side2.languageTitle"), "aria-label": T("side2.languageTitle"),
+      on: { click: () => post({ type: "action", action: "pickLanguage" }) },
+    }, icon("globe"), h("span", { class: "lang-code", id: "lang-code", text: langCode() }));
+    const updateBtn = h("button", {
+      class: "mini sb-upd", id: "upd-btn", title: T("side2.updateIdle"), "aria-label": T("side2.updateTitle"),
+      on: { click: () => post({ type: "action", action: "updateClick" }) },
+    }, icon("cloud-download"), h("span", { class: "upd-dot", id: "upd-dot", hidden: true }));
     const head = h("header", { class: "sb-head" },
       ICON ? h("img", { class: "sb-logo", src: ICON, alt: "" }) : icon("shield"),
       h("div", { class: "sb-name" },
@@ -118,6 +131,8 @@
         h("span", { class: "sb-ver", text: VERSION ? `v${VERSION}` : "" }),
       ),
       h("span", { class: "chip idle", id: "chip-patch", text: "—" }),
+      languageBtn,
+      updateBtn,
     );
 
     // ---- 状态卡片 ----
@@ -188,26 +203,6 @@
     refs["gem-meta"] = gemMeta;
     refs["gem-log"] = gemLog;
     gemCard.append(gemMeta, gemLog);
-
-    // ---- 更新卡片 ----
-    const updCard = h("section", { class: "card" },
-      h("div", { class: "card-head" },
-        h("span", { text: T("side2.updateTitle") }),
-        h("span", { class: "badge idle", id: "upd-badge", text: "" }),
-      ),
-    );
-    const updStatus = h("div", { class: "upd-status", id: "upd-status", text: T("side2.updateIdle") });
-    const updActions = h("div", { class: "upd-actions" },
-      h("button", { class: "btn ghost", id: "upd-check", on: { click: () => post({ type: "action", action: "checkUpdate" }) } }, icon("cloud-download"), T("side2.updateCheck")),
-      h("button", { class: "btn primary", id: "upd-apply", hidden: true, on: { click: () => post({ type: "action", action: "applyUpdate" }) } }, T("side2.updateApply")),
-      h("button", { class: "btn primary", id: "upd-reload", hidden: true, on: { click: () => post({ type: "action", action: "reloadWindow" }) } }, T("side2.updateReload")),
-    );
-    refs["upd-badge"] = /** @type {any} */ (updCard.querySelector("#upd-badge"));
-    refs["upd-status"] = updStatus;
-    refs["upd-check"] = /** @type {any} */ (updActions.children[0]);
-    refs["upd-apply"] = /** @type {any} */ (updActions.children[1]);
-    refs["upd-reload"] = /** @type {any} */ (updActions.children[2]);
-    updCard.append(updStatus, updActions);
 
     // ---- 日志 ----
     const levelSelect = /** @type {HTMLSelectElement} */ (h("select", { class: "log-level", id: "log-level", title: T("side2.logLevel") },
@@ -285,7 +280,7 @@
 
     app.append(h("div", { class: "sb" },
       head,
-      h("div", { class: "sb-scroll" }, statusCard, ipCard, gemCard, updCard, logsCard, actionGrid),
+      h("div", { class: "sb-scroll" }, statusCard, ipCard, gemCard, logsCard, actionGrid),
       h("div", { class: "toast", id: "toast", hidden: true }),
     ));
 
@@ -300,11 +295,9 @@
     refs["gem-badge"] = /** @type {any} */ (app.querySelector("#gem-badge"));
     refs["gem-meta"] = /** @type {any} */ (app.querySelector("#gem-meta"));
     refs["gem-log"] = /** @type {any} */ (app.querySelector("#gem-log"));
-    refs["upd-badge"] = /** @type {any} */ (app.querySelector("#upd-badge"));
-    refs["upd-status"] = /** @type {any} */ (app.querySelector("#upd-status"));
-    refs["upd-check"] = /** @type {any} */ (app.querySelector("#upd-check"));
-    refs["upd-apply"] = /** @type {any} */ (app.querySelector("#upd-apply"));
-    refs["upd-reload"] = /** @type {any} */ (app.querySelector("#upd-reload"));
+    refs["upd-btn"] = /** @type {any} */ (app.querySelector("#upd-btn"));
+    refs["upd-dot"] = /** @type {any} */ (app.querySelector("#upd-dot"));
+    refs["lang-btn"] = /** @type {any} */ (app.querySelector("#lang-btn"));
     refs["logs-list"] = /** @type {any} */ (app.querySelector("#logs-list"));
     refs["log-file"] = /** @type {any} */ (app.querySelector("#log-file"));
     refs["log-count"] = /** @type {any} */ (app.querySelector("#log-count"));
@@ -321,6 +314,8 @@
       refs[`gemdot-${key}`] = /** @type {any} */ (app.querySelector(`#dot-gem-${key}`));
       refs[`gemval-${key}`] = /** @type {any} */ (app.querySelector(`#val-gem-${key}`));
     }
+    // 语言切换会重建骨架；日志文件名保存在 state 里，重建后立即恢复，避免退回“暂无日志文件”
+    setLogFile(state.logFile);
   }
 
   /**
@@ -548,7 +543,8 @@
     const antiKind = anti.state === "blocked" ? "err" : anti.state === "ok" ? "ok" : "warn";
     setDot(refs["gemdot-anti"], antiKind);
     setText(refs["gemval-anti"], anti.state === "blocked" ? T("side2.geminiAntiBlocked")
-      : anti.state === "ok" ? T("side2.geminiAntiOk")
+      : anti.state === "ok" ? (anti.loggedIn ? T("side2.geminiAntiLoggedIn") : T("side2.geminiAntiOk"))
+      : anti.state === "unknown" ? T("side2.geminiAntiNoLog")
       : T("side2.geminiAntiUnknown"));
 
     const interval = Number(state.settings.geminiIntervalSeconds) || 0;
@@ -561,6 +557,11 @@
         logEl.className = "hint err";
         logEl.textContent = T("side2.geminiLogMatched", { time: formatTime(evidence.mtimeMs) });
         logEl.title = `${evidence.path}\n${evidence.line}`;
+      } else if (evidence.loggedIn) {
+        logEl.hidden = false;
+        logEl.className = "hint ok";
+        logEl.textContent = T("side2.geminiLogLoggedIn");
+        logEl.title = `${evidence.loginPath || evidence.path}\n${evidence.loginLine || evidence.line}`;
       } else {
         logEl.hidden = true;
         logEl.textContent = "";
@@ -568,39 +569,41 @@
     }
   }
 
+  /** 更新入口收敛到头部一个小图标：hover 看状态，点击按状态检查/下载安装/重载。 */
   /** @param {any} upd @param {string} version */
   function applyUpdate(upd, version) {
-    const badge = refs["upd-badge"];
-    const status = refs["upd-status"];
-    const applyBtn = refs["upd-apply"];
-    const reloadBtn = refs["upd-reload"];
-    const checkBtn = refs["upd-check"];
+    const btn = refs["upd-btn"];
+    if (!btn) return;
     if (!upd) {
-      setText(status, T("side2.updateIdle"));
+      btn.title = `${T("side2.updateTitle")}: ${T("side2.updateIdle")}`;
       return;
     }
     const tag = upd.latestTag || "";
-    /** @type {Record<string, { kind: string, text: string }>} */
+    /** @type {Record<string, { icon: string, dot: string, text: string }>} */
     const map = {
-      disabled: { kind: "idle", text: T("side2.updateDisabled") },
-      idle: { kind: "idle", text: T("side2.updateIdle") },
-      checking: { kind: "spin", text: T("side2.updateChecking") },
-      uptodate: { kind: "ok", text: T("side2.updateUptodate", { version: upd.currentVersion || version }) },
-      available: { kind: "warn", text: T("side2.updateAvailable", { current: upd.currentVersion || version, latest: tag }) },
-      downloading: { kind: "spin", text: T("side2.updateDownloading", { latest: tag }) },
-      installing: { kind: "spin", text: T("side2.updateInstalling") },
-      installed: { kind: "ok", text: T("side2.updateInstalled", { latest: tag }) },
-      error: { kind: "err", text: upd.error || T("side2.updateError") },
+      disabled: { icon: "cloud-download", dot: "", text: T("side2.updateDisabled") },
+      idle: { icon: "cloud-download", dot: "", text: T("side2.updateIdle") },
+      checking: { icon: "sync~spin", dot: "", text: T("side2.updateChecking") },
+      uptodate: { icon: "check", dot: "", text: T("side2.updateUptodate", { version: upd.currentVersion || version }) },
+      available: { icon: "cloud-download", dot: "warn", text: T("side2.updateAvailable", { current: upd.currentVersion || version, latest: tag }) },
+      downloading: { icon: "sync~spin", dot: "warn", text: T("side2.updateDownloading", { latest: tag }) },
+      installing: { icon: "sync~spin", dot: "warn", text: T("side2.updateInstalling") },
+      installed: { icon: "debug-restart", dot: "ok", text: T("side2.updateInstalled", { latest: tag }) },
+      error: { icon: "warning", dot: "err", text: upd.error || T("side2.updateError") },
     };
     const view = map[upd.status] || map.idle;
-    if (badge) {
-      badge.className = `badge ${view.kind}`;
-      badge.textContent = view.kind === "ok" ? "OK" : view.kind === "err" ? "!" : view.kind === "warn" ? "↑" : view.kind === "spin" ? "…" : "";
+    const iconEl = btn.querySelector(".codicon");
+    if (iconEl) {
+      const [name, mod] = view.icon.split("~");
+      iconEl.className = `codicon codicon-${name}${mod ? ` codicon-modifier-${mod}` : ""}`;
     }
-    setText(status, view.text);
-    if (applyBtn) applyBtn.hidden = upd.status !== "available";
-    if (reloadBtn) reloadBtn.hidden = upd.status !== "installed";
-    if (checkBtn) checkBtn.disabled = upd.status === "checking" || upd.status === "downloading" || upd.status === "installing";
+    const dot = refs["upd-dot"];
+    if (dot) {
+      dot.hidden = !view.dot;
+      dot.className = `upd-dot ${view.dot}`;
+    }
+    btn.title = `${T("side2.updateTitle")}: ${view.text}`;
+    btn.disabled = upd.status === "checking" || upd.status === "downloading" || upd.status === "installing";
   }
 
   // ============================================================
@@ -691,9 +694,10 @@
 
   /** 更新页脚日志文件名（首次启动时文件可能尚未出现，需要后续 events 补齐） */
   function setLogFile(pathText) {
+    const text = String(pathText || "");
+    state.logFile = text;
     const file = refs["log-file"];
     if (!file) return;
-    const text = String(pathText || "");
     file.textContent = text ? text.split(/[\\/]/).pop() : T("logs.noFile");
     file.title = text;
   }
@@ -733,6 +737,7 @@
       case "lang": {
         if (!msg.lang) break;
         LANG = msg.lang;
+        if (msg.languagePref) state.settings.languagePref = msg.languagePref;
         T = I18n ? I18n.createT(LANG) : T;
         buildSkeleton();
         applyModel(state.model);

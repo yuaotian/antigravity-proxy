@@ -37,6 +37,8 @@ class ConfigPanel {
    * @property {(current: any) => Promise<import("./proxyScan").ScanResult>} scan 本机代理扫描
    * @property {(key: string, params?: Record<string, any>) => string} t 翻译函数
    * @property {() => string} lang             当前界面语言（zh-cn / en / ru）
+   * @property {() => string} languagePref     语言偏好（auto / zh-cn / en / ru）
+   * @property {(lang: string) => Promise<void>} setLanguage 切换界面语言
    */
 
   /**
@@ -62,7 +64,7 @@ class ConfigPanel {
     const p = ConfigPanel.current;
     if (!p) return;
     p.panel.title = p.deps.t("host.panelTitle");
-    p.post({ type: "lang", lang: p.deps.lang() });
+    p.post({ type: "lang", lang: p.deps.lang(), languagePref: p.deps.languagePref() });
   }
 
   /** @param {PanelDeps} deps @param {"onboarding" | "scan" | undefined} intent */
@@ -103,7 +105,7 @@ class ConfigPanel {
   /** @param {"onboarding" | "scan"} [intent] */
   postInit(intent) {
     const read = this.deps.store.read();
-    this.post({ type: "init", lang: this.deps.lang(), intent, read: { status: read.status, raw: read.raw, error: read.error }, meta: this.meta() });
+    this.post({ type: "init", lang: this.deps.lang(), languagePref: this.deps.languagePref(), intent, read: { status: read.status, raw: read.raw, error: read.error }, meta: this.meta() });
   }
 
   postMeta() {
@@ -137,6 +139,11 @@ class ConfigPanel {
           } else {
             this.post({ type: "saved", ok: false, error: r.error });
           }
+          break;
+        }
+        case "setLanguage": {
+          await this.deps.setLanguage(String(msg.lang || "auto"));
+          this.post({ type: "lang", lang: this.deps.lang(), languagePref: this.deps.languagePref() });
           break;
         }
         case "probe": {

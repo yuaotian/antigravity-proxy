@@ -53,7 +53,7 @@ function activate(context) {
   if (!info.supported) {
     // 非 Windows：代理补丁为 version.dll 劫持方案，不适用；命令给出明确说明而不是静默失败
     const unsupported = () => vscode.window.showInformationMessage(tr("ext.unsupported"));
-    for (const id of ["openSettings", "testProxy", "repairPatch", "restartIde", "openLogs", "scanProxy", "openLogsWindow", "checkGemini", "refreshIp", "checkUpdate", "focusSidebar"]) {
+    for (const id of ["openSettings", "testProxy", "repairPatch", "restartIde", "openLogs", "scanProxy", "openLogsWindow", "checkGemini", "refreshIp", "checkUpdate", "focusSidebar", "switchLanguage"]) {
       context.subscriptions.push(vscode.commands.registerCommand(`${CONFIG_SECTION}.${id}`, unsupported));
     }
     return;
@@ -242,6 +242,50 @@ function activate(context) {
     return geminiState.result;
   };
 
+  /** 手动切换界面语言：写 VS Code 全局设置；onDidChangeConfiguration 负责重建各视图 */
+  const setLanguage = async (/** @type {string} */ lang) => {
+    const cfg = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const next = ["auto", "zh-cn", "en", "ru"].includes(lang) ? lang : "auto";
+    if (cfg.get("language", "auto") === next) {
+      sidebar?.relocalize();
+      logView?.relocalize();
+      ConfigPanel.relocalizeIfOpen();
+      return;
+    }
+    await cfg.update("language", next, vscode.ConfigurationTarget.Global);
+  };
+
+  /** 侧栏/命令面板共用的语言选择器 */
+  const pickLanguage = async () => {
+    const cfg = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const current = cfg.get("language", "auto");
+    const items = [
+      { value: "auto", label: tr("lang.auto") },
+      { value: "zh-cn", label: tr("lang.zh") },
+      { value: "en", label: tr("lang.en") },
+      { value: "ru", label: tr("lang.ru") },
+    ].map((o) => ({
+      label: o.label,
+      description: o.value === current ? "\u2713" : "",
+      value: o.value,
+    }));
+    const picked = await vscode.window.showQuickPick(items, {
+      title: tr("side2.languageTitle"),
+      placeHolder: tr("side2.languageTitle"),
+      matchOnDescription: false,
+    });
+    if (picked) await setLanguage(picked.value);
+  };
+
+  /** 头部更新图标：按当前状态检查 / 下载安装 / 重载 */
+  const updateClick = async () => {
+    const s = updater.getState();
+    if (s.status === "available") return updater.downloadAndInstall();
+    if (s.status === "installed") return vscode.commands.executeCommand("workbench.action.reloadWindow");
+    if (s.status === "checking" || s.status === "downloading" || s.status === "installing") return;
+    return updater.check({ manual: true });
+  };
+
   const panelDeps = () => ({
     vscode,
     extensionUri: context.extensionUri,
@@ -258,6 +302,8 @@ function activate(context) {
     scan,
     t: tr,
     lang: currentLang,
+    languagePref: () => vscode.workspace.getConfiguration(CONFIG_SECTION).get("language", "auto"),
+    setLanguage,
   });
   const openSettings = () => ConfigPanel.show(panelDeps());
 
@@ -276,6 +322,8 @@ function activate(context) {
     checkGemini: () => runGeminiCheck(false),
     checkUpdate: () => updater.check({ manual: true }),
     applyUpdate: () => updater.downloadAndInstall(),
+    updateClick,
+    pickLanguage,
     reloadWindow: () => vscode.commands.executeCommand("workbench.action.reloadWindow"),
     refreshLogs: () => logService.rescan(),
   };
@@ -286,6 +334,8 @@ function activate(context) {
       geminiIntervalSeconds: Number(cfg.get("gemini.intervalSeconds", 300)),
       egressIntervalSeconds: Number(cfg.get("egress.refreshIntervalSeconds", 1800)),
       statusProbeSeconds: Number(cfg.get("statusBar.probeIntervalSeconds", 60)),
+      language: currentLang(),
+      languagePref: cfg.get("language", "auto"),
     };
   };
 
@@ -338,6 +388,7 @@ function activate(context) {
     vscode.commands.registerCommand(`${CONFIG_SECTION}.refreshIp`, () => ipInfo.get({ force: true })),
     vscode.commands.registerCommand(`${CONFIG_SECTION}.checkUpdate`, () => updater.check({ manual: true })),
     vscode.commands.registerCommand(`${CONFIG_SECTION}.applyUpdate`, () => updater.downloadAndInstall()),
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.switchLanguage`, pickLanguage),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(`${CONFIG_SECTION}.language`)) {
         t = I18n.createT(currentLang());

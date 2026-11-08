@@ -10,6 +10,7 @@
   "command.checkGemini": "Проверить доступность Gemini / Antigravity",
   "command.refreshIp": "Обновить внешний IP прокси",
   "command.checkUpdate": "Проверить обновления расширения",
+  "command.switchLanguage": "Сменить язык",
   "view.containerTitle": "Прокси Antigravity",
   "view.statusTitle": "Состояние и действия",
   "view.logsContainerTitle": "Журнал Antigravity Proxy",
