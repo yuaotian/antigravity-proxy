@@ -195,16 +195,6 @@
           "minimum": 0,
           "description": "%config.probeInterval%"
         },
-        "antigravityProxy.statusBar.showEgress": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.showEgress%"
-        },
-        "antigravityProxy.statusBar.showGemini": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.showGemini%"
-        },
         "antigravityProxy.egress.refreshIntervalSeconds": {
           "type": "number",
           "default": 1800,

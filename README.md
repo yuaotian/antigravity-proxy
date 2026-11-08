@@ -29,7 +29,7 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 - 不需要 TUN 模式，也不需要管理员权限；
 - 支持 SOCKS5 / HTTP 代理（含账号密码认证）；
 - 支持 **Antigravity IDE**、**Antigravity**（桌面版）与 **Antigravity CLI**（`agy`）；
-- Antigravity IDE 附带配套插件：状态栏显示代理状态、可视化设置、IDE 更新后自动恢复补丁。
+- Antigravity IDE 附带配套插件：状态栏代理状态、可视化设置、实时日志、出口 IP/Gemini 检测、插件自更新，IDE 更新后自动恢复补丁。
 
 ## 安装
 
@@ -86,10 +86,14 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 
 ## Antigravity IDE 插件
 
-- **状态栏**：底部显示代理状态，点击打开设置面板；
+- **状态栏**：底部只占一个条目，显示代理状态，点击打开设置面板；出口 IP·运营商、Gemini 结论、插件更新都收在同一个悬浮卡片里；
+- **左侧栏**：补丁/配置/代理/连通状态、出口 IP、Gemini 三层结论、实时日志、插件更新与快捷操作；
+- **日志窗口**：底部面板内置，支持级别筛选、关键字搜索、暂停/复制、打开文件/目录；
 - **设置面板**：可视化修改代理，保存前可「测试连接」，自动备份旧配置；
 - **首次引导**：代理不可用时自动打开设置并扫描本机代理（当前配置、IDE 代理设置、系统代理、环境变量、常用端口），找到后一键填入；
+- **Gemini 检测**：网络 / Gemini API 区域 / Antigravity 会话三层判定，可自定义定时并联动左侧栏；
 - **补丁守护**：IDE 更新删掉补丁后，下次启动自动恢复（会提示重启）；
+- **自更新**：本地代理 → GitHub 镜像 → 直连检查新版本，下载后校验 SHA256 再安装；
 - 界面支持中文 / English / Русский，默认跟随 IDE 语言。
 
 **安装**：在线安装与 `doctor` 会自动安装。手动部署后若插件未安装，IDE 启动时会弹出一条系统通知（每个补丁版本只提示一次，忽略即不再打扰）：补丁同目录有插件安装包时，点击通知即在本地安装；只复制了 `version.dll` 时，点击后会先确认，再打开 PowerShell 窗口在线安装插件。也可在扩展视图 → 右上角 `…` → 「从 VSIX 安装」。
@@ -109,6 +113,14 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 | `antigravityProxy.patchGuard.autoRestore` | `true` | 启动时自动恢复被更新清除的补丁 |
 | `antigravityProxy.statusBar.enabled` | `true` | 是否显示状态栏 |
 | `antigravityProxy.statusBar.probeIntervalSeconds` | `60` | 代理连通检测间隔（秒）；`0` 只在启动和保存后检测 |
+
+### 界面预览
+
+| 简体中文 | English | Русский |
+|:--:|:--:|:--:|
+| ![简体中文界面](docs/images/ide-extension/logview.zh-cn.png) | ![English UI](docs/images/ide-extension/logview.png) | ![Русский интерфейс](docs/images/ide-extension/logview.ru.png) |
+
+> 截图来自 Antigravity IDE 1.107.0（Windows），左侧栏与底部「代理日志」面板；IDE 自身的菜单语言跟随 IDE 安装，插件文案由 `antigravityProxy.language` 控制。
 
 更多说明见 [docs/ide-extension.md](docs/ide-extension.md)。
 

@@ -19,8 +19,6 @@
   "config.autoRestore": "IDE 自动更新清除 `version.dll` / `config.json` 后，启动时自动从插件内置副本恢复（`config.json` 优先恢复为你上次的配置）。恢复后需重启 IDE 生效。",
   "config.statusBarEnabled": "在底部状态栏显示代理状态（点击打开代理设置）。",
   "config.probeInterval": "状态栏代理端口连通性检测间隔（秒）；0 表示仅在启动与保存后检测。",
-  "config.showEgress": "在底部状态栏显示代理出口 IP 与运营商。",
-  "config.showGemini": "在底部状态栏显示 Gemini / Antigravity 可用性结论。",
   "config.egressInterval": "代理出口 IP 刷新间隔（秒）；0 表示仅手动刷新。启用时最小 60 秒。",
   "config.geminiInterval": "Gemini / Antigravity 可用性检测间隔（秒）；0 表示关闭定时检测。启用时最小 60 秒。",
   "config.updateEnabled": "从 GitHub Release 检查插件新版本；安装前用 SHA256SUMS.txt 校验下载文件。",

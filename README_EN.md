@@ -29,7 +29,7 @@ Antigravity-Proxy is a proxy patch (DLL) that works once you put it in the Antig
 - No TUN mode and no administrator rights needed;
 - Supports SOCKS5 / HTTP proxies (including username/password authentication);
 - Supports **Antigravity IDE**, **Antigravity** (desktop) and **Antigravity CLI** (`agy`);
-- Antigravity IDE comes with a companion extension: proxy status in the status bar, visual settings, and automatic patch restore after IDE updates.
+- Antigravity IDE comes with a companion extension: proxy status, visual settings, live logs, egress IP/Gemini checks, extension self-update, and automatic patch restore after IDE updates.
 
 ## Installation
 
@@ -86,10 +86,14 @@ Restart the app after deployment.
 
 ## Antigravity IDE Extension
 
-- **Status bar**: shows the proxy status at the bottom; click it to open the settings panel;
+- **Status bar**: one single item at the bottom; click it to open the settings panel. Egress IP/ISP, the Gemini result and extension updates live in the same hover card;
+- **Sidebar**: patch/config/proxy/reachability, egress IP, three-layer Gemini result, live logs, extension update and quick actions;
+- **Log window**: built-in bottom panel with level filters, keyword search, pause/copy and open file/folder;
 - **Settings panel**: edit the proxy visually, "Test connection" before saving, old config is backed up automatically;
 - **First-run guide**: when the proxy is unavailable, opens the settings and scans for local proxies (current config, IDE proxy settings, system proxy, environment variables, common ports); fill in a found proxy with one click;
+- **Gemini check**: three layers (network / Gemini API region / Antigravity session), configurable interval, mirrored in the sidebar;
 - **Patch guard**: if an IDE update deletes the patch, it is restored on the next start (you will be asked to restart);
+- **Self-update**: local proxy → GitHub mirror → direct, SHA256 verified before install;
 - UI in Chinese / English / Russian, following the IDE language by default.
 
 **Install**: online install and `doctor` install it automatically. After a manual deployment, if the extension is not installed, the IDE shows a system notification on startup (once per patch version; ignoring it means no further reminders). If the extension package sits next to the patch, clicking the notification installs it locally; if only `version.dll` was copied, clicking asks for confirmation first and then opens a PowerShell window to install the extension online. You can also use Extensions view → `…` at the top right → "Install from VSIX...".
@@ -109,6 +113,14 @@ Restart the app after deployment.
 | `antigravityProxy.patchGuard.autoRestore` | `true` | Restore a patch removed by an update at startup |
 | `antigravityProxy.statusBar.enabled` | `true` | Show the status bar item |
 | `antigravityProxy.statusBar.probeIntervalSeconds` | `60` | Proxy reachability check interval (seconds); `0` = check only at startup and after saving |
+
+### Preview
+
+| 简体中文 | English | Русский |
+|:--:|:--:|:--:|
+| ![Chinese UI](docs/images/ide-extension/logview.zh-cn.png) | ![English UI](docs/images/ide-extension/logview.png) | ![Russian UI](docs/images/ide-extension/logview.ru.png) |
+
+> Screenshots taken in Antigravity IDE 1.107.0 (Windows): sidebar and the built-in "Proxy Logs" panel. The IDE chrome follows the IDE language; extension strings follow `antigravityProxy.language`.
 
 See [docs/ide-extension.md](docs/ide-extension.md) for more.
 

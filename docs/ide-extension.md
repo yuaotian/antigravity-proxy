@@ -42,7 +42,7 @@ lib/logTail.js                      日志发现与增量尾随（10MB 截断、
 lib/logService.js                   环形缓冲 + 200ms 批量广播（DLL 日志与插件事件合并）
 lib/logView.js                      底部面板日志 WebviewView + 编辑器标签页兜底
 lib/sidebarView.js                  左侧活动栏 WebviewView 宿主（状态/IP/Gemini/日志/更新）
-lib/statusBar.js                    三个状态栏条目：主状态 / 出口 IP / Gemini
+lib/statusBar.js                    单一状态栏条目（出口 IP / Gemini / 更新合并在悬浮卡片）
 lib/webviewHtml.js                  Webview CSP/HTML 生成（nonce、资源 URI、首帧数据）
 lib/configPanel.js                  Webview 宿主侧：单例面板、CSP、消息路由、保存前二次校验
 lib/restart.js                      两段式重启器
@@ -114,16 +114,18 @@ StatusModel = {
 - **连通检测**：状态栏只做轻量 TCP 检测（间隔 `statusBar.probeIntervalSeconds`，最小 10 秒，0 为仅启动/保存后）；
   面板“测试连接”与命令 `测试代理连接` 做完整隧道检测（握手 → 认证 → CONNECT `www.gstatic.com:443`），
   失败时按阶段（config/tcp/handshake/auth/tunnel）以当前界面语言给出原因。
-- 无障碍：三个状态栏项都设置 `accessibilityInformation`（role=button，朗读完整状态与操作提示）。
+- 无障碍：状态栏项设置 `accessibilityInformation`（role=button，朗读完整状态与操作提示）。
 
-### 3.1 新增的两个状态栏条目
+### 3.1 状态栏信息合并（2026-11-08 调整）
 
-| 条目 | 内容 | 点击 | 关闭方式 |
-|:--|:--|:--|:--|
-| 出口 IP（priority 99） | `$(globe) 202.156.27.9 · StarHub`，悬浮卡片含 ASN/位置/来源/机房提示/刷新 | 打开左侧栏 | `antigravityProxy.statusBar.showEgress` |
-| Gemini（priority 98） | `$(pass-filled) Gemini 可用` / `$(warning) Gemini 区域受限` / `$(question) 无法判定` | 立即检测 | `antigravityProxy.statusBar.showGemini` |
+早期版本把出口 IP 与 Gemini 各做成一个独立状态栏条目，底部会同时出现三项（例如 `Proxy 7890`、`202.156.27.9 · StarHub`、`Gemini available`），占用过宽。
 
-主状态项的悬浮卡片同步增加「出口 IP」「Gemini」「插件更新」三行；优先级顺序不变，避免新功能盖过补丁缺失/配置异常。
+现已合并为**单一主条目**：
+
+- 文本仍只显示"最需要处理"的一项（补丁缺失 / 配置异常 / 缺少 agy.exe / 待重启 / 端口 / 连通）；
+- 悬浮卡片内新增「出口 IP（ASN + 运营商 + 来源 + 上次时间）」「Gemini（三层结论 + 上次检测时间）」「插件更新」三行；
+- 需要常驻查看时点击状态栏或「打开侧栏」，左侧栏与日志窗口页脚仍完整展示这些信息；
+- 原 `antigravityProxy.statusBar.showEgress` / `showGemini` 设置已移除，避免出现"关不掉的空条目"。
 
 ### 3.2 实时日志窗口
 

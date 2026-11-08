@@ -26,7 +26,7 @@ lib/logTail.js                       日志发现 + 增量尾随（截断、跨�
 lib/logService.js                    环形缓冲 + 200ms 批量广播（DLL 日志 + 插件事件）
 lib/logView.js                       底部面板日志 WebviewView + 编辑器标签页兜底
 lib/sidebarView.js                   左侧栏 WebviewView 宿主
-lib/statusBar.js                     三个状态栏条目：主状态 / 出口 IP / Gemini
+lib/statusBar.js                     单一状态栏条目（出口 IP / Gemini / 更新合并在悬浮卡片）
 lib/webviewHtml.js                   Webview CSP/HTML（nonce、资源 URI、首帧 data-*）
 media/sidebar.js + sidebar.css       左侧栏前端
 media/logview.js + logview.css       日志窗口前端
@@ -106,7 +106,7 @@ media/i18n.js                        三语词条（475 条）
 - 经当前代理请求 `https://ipinfo.io/json`；代理失败才回退直连，并在 UI 标注 `via=direct`（避免把直连出口误当代理出口）。
 - 解析 `ip / org（AS4657 StarHub Ltd → ASN + 名称）/ country / region / city / timezone`。
 - 机房/托管关键字与 DLL 诊断同源（`src/hooks/Hooks.cpp:493-505`），命中时显示"机房 IP"警告。
-- 缓存 30 分钟；默认 1800 秒刷新；可关闭。状态栏条目：`$(globe) <ip> · <运营商首词>`。
+- 缓存 30 分钟；默认 1800 秒刷新；可关闭。底部**只保留一个状态栏条目**，出口 IP/运营商在悬浮卡片内展示（避免额外占用底部空间）。
 
 ### 5.2 为什么 Gemini 不能只 ping
 
@@ -122,16 +122,14 @@ media/i18n.js                        三语词条（475 条）
 | Gemini API 区域 | GET `https://generativelanguage.googleapis.com/v1beta/models?key=<无效 key>` | 命中 `User location is not supported` → 受限；命中 `API key not valid`/`API_KEY_INVALID` → 地区放行；其它 → 无法判定 |
 | Antigravity 会话 | POST `loadCodeAssist`（空 JSON）+ 读取 `%APPDATA%\Antigravity\logs\<最新>\ls-main.log` | 403/1008 或日志命中 → 明确受限；401/无日志 → 无法判定 |
 
-- 定时：`antigravityProxy.gemini.intervalSeconds` 默认 300 秒（最小 60，0 关闭）；结论同步到左侧栏与状态栏。
-- 状态栏：`$(pass-filled) Gemini 可用` / `$(warning) Gemini 区域受限` / `$(question) 无法判定` / `$(error) 不可达`；代理异常单独一档。
+- 定时：`antigravityProxy.gemini.intervalSeconds` 默认 300 秒（最小 60，0 关闭）；结论同步到左侧栏与状态栏**悬浮卡片**。
+- 状态栏悬浮卡片：`$(pass-filled) Gemini 可用` / `$(warning) Gemini 区域受限` / `$(question) 无法判定` / `$(error) 不可达`；代理异常单独一档。主条目文本仍只显示代理自身状态。
 - 设计取舍：**不用一个对勾概括**。无法判定时保留"无法判定"，避免误导用户去改 DNS/重装。
 
 ## 6. 配置项与默认值
 
 | 设置 | 默认 | 作用 |
 |:--|:--|:--|
-| `antigravityProxy.statusBar.showEgress` | `true` | 显示出口 IP 条目 |
-| `antigravityProxy.statusBar.showGemini` | `true` | 显示 Gemini 条目 |
 | `antigravityProxy.egress.refreshIntervalSeconds` | `1800` | 出口 IP 刷新间隔（0=仅手动；最小 60） |
 | `antigravityProxy.gemini.intervalSeconds` | `300` | Gemini 检测间隔（0=关闭；最小 60） |
 | `antigravityProxy.update.enabled` | `true` | 自动检查插件更新 |
@@ -158,7 +156,7 @@ media/i18n.js                        三语词条（475 条）
 
 - 本地临时 SOCKS5 与 HTTP CONNECT 代理：两种隧道均能取回 v2.6 Release JSON；
 - `SHA256SUMS.txt` 经代理下载并解析（6 条目）；
-- 日志尾随/截断重置、状态栏三分项渲染、两个 Webview 的 HTML/init 消息。
+- 日志尾随/截断重置、状态栏单条目 + 悬浮卡片渲染、两个 Webview 的 HTML/init 消息。
 
 ### 7.3 IDE 实机验证（隔离副本）
 
@@ -183,11 +181,12 @@ media/i18n.js                        三语词条（475 条）
 | JS 单测 | 10 个测试文件、56 个用例全部通过 |
 | 安装（隔离） | `--install-extension` 退出码 0；`extensions.json` 出现 2.6.0；旧版本目录被替换 |
 | 冷启动 | 侧栏 v2.6.0；补丁 active、配置 OK、代理 7890 可达；出口 IP `202.156.27.9 / AS4657 StarHub Ltd / Singapore`；Gemini 三层为 `204 via proxy` / `region allowed` / `needs sign-in to confirm` |
-| 状态栏 | 主状态、`202.156.27.9 · StarHub`、`Gemini available` 三项同时存在，点击可见卡片 |
+| 状态栏 | 单一主条目（`Proxy 7890 · 157ms`）；悬浮卡片内含出口 IP `202.156.27.9 / AS4657 StarHub Ltd`、`Gemini available` 与插件更新行 |
 | 日志搜索/筛选 | 预先写入的 `AGP-TEST-20261108-MARKER` 被命中且高亮；Error 级别筛选只保留错误行 |
 | 日志窗口 | 底部面板标签存在；渲染 1000 行（总数 1805）；文件名、环境条、级别计数正确；暂停/换行/复制/打开文件按钮可用 |
 | 自更新 | 用伪造的 2.5.0 VSIX 安装后，检查到 `v2.6`；点“立即更新”经 config proxy 下载、SHA256 校验通过、`workbench.extensions.installExtension` 安装成功；`extensions.json` 变为 2.6.0；重载后侧栏 v2.6.0 |
-| 本体安装 | `bin\antigravity-ide.cmd --install-extension output\ide\antigravity-proxy.vsix --force` 成功，本体 `extensions.json` 为 2.6.0；需重载窗口生效（安装目录 `version.dll` 仍为 2.3，按补丁守护“只补缺失、不覆盖”策略未替换） |
+| 本体安装 | `--install-extension` 退出码 0，本体 `extensions.json` 为 2.6.0；`version.dll` 已用本次构建覆盖（SHA256 `314E…D8B9`，旧文件备份为 `version.dll.bak-20261108-152923`，备份与新版哈希一致）；`config.json` 未改动 |
+| 三语截图 | `docs/images/ide-extension/logview.png` / `logview.zh-cn.png` / `logview.ru.png`（1600×1000，单一状态栏条目 + 悬浮卡片） |
 
 实机测试中发现并已修复的问题：
 
@@ -197,6 +196,10 @@ media/i18n.js                        三语词条（475 条）
 4. 日志窗口的插件事件没有 PID 时，消息落入 52px 的 PID 列，表现为右侧逐字换行（PID 列改为始终渲染）。
 5. 日志窗口环境条出现“Gemini Gemini available”重复（词条去掉字面量 Gemini）。
 
-![左侧栏与日志窗口](images/ide-extension/logview.png)
+截图（README 预览）：
 
-说明：隔离测试用 `--locale=zh-cn` 启动，但该 IDE 构建仍按英文渲染扩展文案（`vscode.env.language` 为 en），因此截图为英文；三语词条本身已由单测覆盖。
+- 简体中文：[logview.zh-cn.png](images/ide-extension/logview.zh-cn.png)
+- English：[logview.png](images/ide-extension/logview.png)
+- Русский：[logview.ru.png](images/ide-extension/logview.ru.png)
+
+说明：三语截图通过 `antigravityProxy.language` 强制切换；该 IDE 未安装中文/俄文语言包，所以菜单栏仍是英文，插件自身文案与状态栏均已本地化。
