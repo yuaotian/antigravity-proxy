@@ -98,6 +98,14 @@ Restart the app after deployment.
 
 **Install**: online install and `doctor` install it automatically. After a manual deployment, if the extension is not installed, the IDE shows a system notification on startup (once per patch version; ignoring it means no further reminders). If the extension package sits next to the patch, clicking the notification installs it locally; if only `version.dll` was copied, clicking asks for confirmation first and then opens a PowerShell window to install the extension online. You can also use Extensions view → `…` at the top right → "Install from VSIX...".
 
+**Install from Open VSX**: search for `Antigravity Proxy` in the Extensions view, or run:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension yuaotian.antigravity-proxy
+```
+
+Reload the IDE window after installation.
+
 | Status bar | Meaning |
 |:--|:--|
 | `Proxy 7890` | Patch is active, proxy port is reachable |

@@ -22,6 +22,7 @@ param(
     [switch]$Clean,
     [switch]$RunTests,
     [switch]$SkipTests,
+    [string]$ExtensionVersion = "",
     [switch]$Help
 )
 
@@ -803,7 +804,7 @@ if (Test-Path $extSrc) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "LICENSE.txt") -Destination (Join-Path $extRoot "LICENSE.txt") -Force
 
     # 4) 版本号：插件要求 semver（2.5 → 2.5.0）
-    $extVersion = if ($Version -match '^\d+\.\d+$') { "$Version.0" } else { $Version }
+    $extVersion = if ($ExtensionVersion) { $ExtensionVersion } elseif ($Version -match '^\d+\.\d+$') { "$Version.0" } else { $Version }
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     $pkgPath = Join-Path $extSrc "package.json"
     $pkgText = [IO.File]::ReadAllText($pkgPath, $utf8NoBom)
@@ -820,7 +821,12 @@ if (Test-Path $extSrc) {
     }
     $pkgDescription = & $resolveNls $pkg.description
 
-    $readme = @"
+    # 市场详情页 README：优先使用插件专用三语 README（含 GitHub 直链截图），缺失时回退精简版
+    $readmeSrc = Join-Path $extSrc "README.md"
+    if (Test-Path $readmeSrc) {
+        Copy-Item -LiteralPath $readmeSrc -Destination (Join-Path $extRoot "README.md") -Force
+    } else {
+        $readme = @"
 # Antigravity Proxy
 
 Antigravity-Proxy 的 IDE 配套插件：
@@ -834,7 +840,8 @@ Antigravity-Proxy 的 IDE 配套插件：
 
 项目主页：https://github.com/yuaotian/antigravity-proxy
 "@
-    [IO.File]::WriteAllText((Join-Path $extRoot "README.md"), $readme, $utf8NoBom)
+        [IO.File]::WriteAllText((Join-Path $extRoot "README.md"), $readme, $utf8NoBom)
+    }
 
     # 5) VSIX 清单与内容类型
     $manifest = @"

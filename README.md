@@ -98,6 +98,14 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 
 **安装**：在线安装与 `doctor` 会自动安装。手动部署后若插件未安装，IDE 启动时会弹出一条系统通知（每个补丁版本只提示一次，忽略即不再打扰）：补丁同目录有插件安装包时，点击通知即在本地安装；只复制了 `version.dll` 时，点击后会先确认，再打开 PowerShell 窗口在线安装插件。也可在扩展视图 → 右上角 `…` → 「从 VSIX 安装」。
 
+**从 Open VSX 安装插件**：在 Antigravity IDE 扩展视图搜索 `Antigravity Proxy`，或执行：
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension yuaotian.antigravity-proxy
+```
+
+安装后执行 `Reload Window`。
+
 | 状态栏 | 含义 |
 |:--|:--|
 | `代理 7890` | 补丁已生效，代理端口可达 |

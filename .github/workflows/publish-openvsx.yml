@@ -1,0 +1,78 @@
+name: Publish Open VSX
+
+# GitHub Release 发布后自动把 x64 VSIX 推到 Open VSX。
+# 需要仓库 Secret：OVSX_PAT（建议用 namespace=yuaotian、extension=antigravity-proxy、
+# Publishing only 的受限 token）。没有 Secret 时任务会明确失败，不会静默跳过。
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 Release tag（例如 v2.6.3）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openvsx-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish VSIX to Open VSX
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 解析 Release tag
+        id: tag
+        shell: bash
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="${EVENT_TAG:-${INPUT_TAG:-}}"
+          if [ -z "$TAG" ]; then
+            echo "::error::没有拿到 Release tag"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "准备发布：$TAG"
+
+      - name: 下载 Release 中的 x64 VSIX
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for i in 1 2 3 4 5 6; do
+            if gh release download "$TAG" --pattern '*ide-extension-win-x64.vsix' --dir dist --clobber; then
+              break
+            fi
+            echo "Release 资产尚未就绪，${i}/6 次重试…"
+            sleep 10
+          done
+          ls -l dist
+          test -n "$(find dist -name '*.vsix' -print -quit)"
+
+      - name: 发布到 Open VSX
+        shell: bash
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "::error::缺少 OVSX_PAT Secret。请在仓库 Settings → Secrets and variables → Actions 添加受限 token。"
+            exit 1
+          fi
+
+          VSIX="$(find dist -name '*.vsix' -print -quit)"
+          echo "发布：$VSIX"
+          npx --yes ovsx@latest publish "$VSIX" -p "$OVSX_PAT"
