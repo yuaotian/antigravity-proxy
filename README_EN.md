@@ -33,7 +33,7 @@ Antigravity-Proxy is a proxy patch (DLL) that works once you put it in the Antig
 
 ## Sponsor
 
-> 📣 **Ad space available**: this README takes paid placements for proxy IP / cloud / dev-tool products — image + link + short copy, booked by the month. Get in touch: [@yuaotian](https://t.me/yuaotian).
+> 📣 **Ad space available**: this README takes paid placements for proxy IP / cloud / dev-tool products — image + link + short copy, booked by the month. Contact WeChat **`JavaRookie666`** (preferred, fastest reply) or Telegram [@yuaotian](https://t.me/yuaotian).
 
 <table>
   <tr>
@@ -56,10 +56,11 @@ Antigravity-Proxy is a proxy patch (DLL) that works once you put it in the Antig
   <tr>
     <td align="center" colspan="2">
       <a href="https://www.ipwo.net/?ref=githubantigravityproxy"><b>👉 Get IPWO residential proxies</b></a>
-      <br/><sub>Ad run: 2026-11-09 ~ 2026-12-09</sub>
     </td>
   </tr>
 </table>
+
+<!-- Ad run: 2026-11-09 ~ 2026-12-09 (source only, not rendered) -->
 
 ## Installation
 

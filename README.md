@@ -33,7 +33,7 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 
 ## 赞助商
 
-> 📣 **广告位招租**：本 README 长期开放广告位，面向代理 IP / 云服务 / 开发工具等同类产品，支持「图片 + 跳转链接 + 短文案」，按月投放。合作请联系 [@yuaotian](https://t.me/yuaotian)。
+> 📣 **广告位招租**：本 README 长期开放广告位，面向代理 IP / 云服务 / 开发工具等同类产品，支持「图片 + 跳转链接 + 短文案」，按月投放。合作请联系微信 **`JavaRookie666`**（优先，回复最快），或 Telegram [@yuaotian](https://t.me/yuaotian)。
 
 <table>
   <tr>
@@ -56,10 +56,11 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
   <tr>
     <td align="center" colspan="2">
       <a href="https://www.ipwo.net/?ref=githubantigravityproxy"><b>👉 立即前往 IPWO 选购</b></a>
-      <br/><sub>广告投放期：2026-11-09 ~ 2026-12-09</sub>
     </td>
   </tr>
 </table>
+
+<!-- 广告投放期：2026-11-09 ~ 2026-12-09（仅源码可见，不渲染） -->
 
 ## 安装
 
