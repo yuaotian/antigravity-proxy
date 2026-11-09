@@ -31,6 +31,36 @@ Antigravity-Proxy is a proxy patch (DLL) that works once you put it in the Antig
 - Supports **Antigravity IDE**, **Antigravity** (desktop) and **Antigravity CLI** (`agy`);
 - Antigravity IDE comes with a companion extension: proxy status, visual settings, live logs, egress IP/Gemini checks, extension self-update, and automatic patch restore after IDE updates.
 
+## Sponsor
+
+> 📣 **Ad space available**: this README takes paid placements for proxy IP / cloud / dev-tool products — image + link + short copy, booked by the month. Get in touch: [@yuaotian](https://t.me/yuaotian).
+
+<table>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="https://www.ipwo.net/?ref=githubantigravityproxy">
+        <img src="img/ad/ipwo.jpg" alt="IPWO residential proxies — 195+ regions, 90M+ active residential IPs" width="100%"/>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>IPWO residential proxies</b> cover 195+ countries and regions with 90M+ active residential IPs, offering rotating, static and unlimited proxy plans.<br/>
+      Built for cross-border e-commerce, overseas social media operations, SEO monitoring, ad verification and data collection — a flexible network layer for global business.
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">💡 <b>Static IP from 9.9</b></td>
+    <td align="center" width="50%">🎟️ Promo code <code>0200</code> (10% off)</td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="https://www.ipwo.net/?ref=githubantigravityproxy"><b>👉 Get IPWO residential proxies</b></a>
+      <br/><sub>Ad run: 2026-11-09 ~ 2026-12-09</sub>
+    </td>
+  </tr>
+</table>
+
 ## Installation
 
 ### Option 1: Antigravity IDE Marketplace (recommended)

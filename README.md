@@ -31,6 +31,36 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 - 支持 **Antigravity IDE**、**Antigravity**（桌面版）与 **Antigravity CLI**（`agy`）；
 - Antigravity IDE 附带配套插件：状态栏代理状态、可视化设置、实时日志、出口 IP/Gemini 检测、插件自更新，IDE 更新后自动恢复补丁。
 
+## 赞助商
+
+> 📣 **广告位招租**：本 README 长期开放广告位，面向代理 IP / 云服务 / 开发工具等同类产品，支持「图片 + 跳转链接 + 短文案」，按月投放。合作请联系 [@yuaotian](https://t.me/yuaotian)。
+
+<table>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="https://www.ipwo.net/?ref=githubantigravityproxy">
+        <img src="img/ad/ipwo.jpg" alt="IPWO 住宅代理 — 195+ 地区，9000 万+ 活跃住宅 IP" width="100%"/>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>IPWO 住宅代理</b>覆盖 195+ 个国家和地区，拥有 9000 万+ 活跃住宅 IP 资源，支持动态住宅、静态住宅及不限量代理。<br/>
+      适用于跨境电商、海外社媒运营、SEO 监控、广告验证及数据采集等场景，为全球业务提供灵活的网络连接方案。
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">💡 <b>静态 IP 低至 9.9</b></td>
+    <td align="center" width="50%">🎟️ 优惠折扣码 <code>0200</code>（立减 10%）</td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="https://www.ipwo.net/?ref=githubantigravityproxy"><b>👉 立即前往 IPWO 选购</b></a>
+      <br/><sub>广告投放期：2026-11-09 ~ 2026-12-09</sub>
+    </td>
+  </tr>
+</table>
+
 ## 安装
 
 ### 方式一：Antigravity IDE 插件市场（推荐）
