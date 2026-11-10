@@ -2,7 +2,7 @@
 param(
     [ValidateSet("Release", "Debug")]
     [string]$Config = "Release",
-    [ValidateSet("x64", "x86")]
+    [ValidateSet("x64", "x86", "arm64")]
     [string]$Arch = "x64",
     [string]$BuildDir = "",
     [switch]$SkipReleaseLayout
@@ -15,7 +15,7 @@ if ([string]::IsNullOrWhiteSpace($BuildDir)) {
     $BuildDir = "build-compatibility-tests-$Arch"
 }
 $BuildPath = Join-Path $Root $BuildDir
-$CMakeArch = if ($Arch -eq "x86") { "Win32" } else { "x64" }
+$CMakeArch = switch ($Arch) { "x86" { "Win32" } "arm64" { "ARM64" } default { "x64" } }
 
 function Invoke-Checked {
     param(
