@@ -57,6 +57,7 @@ log/
 build/
 build-x64/
 build-x86/
+build-arm64/
 build-tests/
 build-process-name-tests/
 build-codex-x64/
