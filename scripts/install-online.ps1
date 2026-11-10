@@ -118,6 +118,7 @@ $script:Msg = @{
     SelectPrompt    = @("输入要安装的序号（多个用逗号分隔，直接回车 = 全部）", "Enter numbers to install (comma separated, Enter = all)", "Введите номера для установки (через запятую, Enter = все)")
     NothingSelected = @("未选择任何产品。", "Nothing selected.", "Ничего не выбрано.")
     ArchSkip        = @("{0} 是 {1} 程序，暂无对应补丁，已跳过。", "{0} is a {1} binary; no matching build, skipped.", "{0} — сборка {1}, подходящего патча нет, пропущено.")
+    AssetMissing    = @("{0} 未提供资产 {1}（该版本可能尚未支持此架构，请使用更新的版本）。", "{0} does not include asset {1} (this release may not support this architecture yet; try a newer version).", "В {0} отсутствует файл {1} (возможно, этот релиз ещё не поддерживает данную архитектуру; попробуйте более новую версию).")
     ResolvingTag    = @("获取最新版本...", "Fetching latest version...", "Получение последней версии...")
     TagFailed       = @("无法获取最新版本（GitHub 与镜像均不可达）。请检查网络或代理，或用 -Version 指定版本。",
                         "Cannot fetch the latest version (GitHub and mirrors unreachable). Check your network/proxy, or pass -Version.",
@@ -415,6 +416,10 @@ function Get-VerifiedAsset([string]$Tag, [string]$Asset, $Checksums) {
 # 下载并解压发布包到 %LOCALAPPDATA%\antigravity-proxy\<tag>\<variant>-win-<arch>，返回包目录；失败返回空串
 function Install-ReleasePackage([string]$Tag, [string]$Variant, [string]$Arch, $Checksums) {
     $asset = "antigravity-proxy-$Tag-$Variant-win-$Arch.zip"
+    if ($script:ReleaseAssets.Count -gt 0 -and $script:ReleaseAssets -notcontains $asset) {
+        Write-Err ((T "AssetMissing") -f $Tag, $asset)
+        return ""
+    }
     $bytes = Get-VerifiedAsset -Tag $Tag -Asset $asset -Checksums $Checksums
     if (-not $bytes) { return "" }
 
@@ -582,10 +587,10 @@ function Invoke-OnlineInstall {
     $targets = @(Select-Targets $targets)
     if ($targets.Count -eq 0) { $script:ExitCode = 3; return }
 
-    # 只有 x64 / x86 有对应补丁
+    # 支持 x64 / x86 / arm64 补丁
     $supported = @()
     foreach ($t in $targets) {
-        if ($t.Arch -eq "x64" -or $t.Arch -eq "x86") { $supported += $t }
+        if ($t.Arch -eq "x64" -or $t.Arch -eq "x86" -or $t.Arch -eq "arm64") { $supported += $t }
         else { Write-Warn ((T "ArchSkip") -f $t.Def.Name, $t.Arch) }
     }
     if ($supported.Count -eq 0) { $script:ExitCode = 3; return }
@@ -701,7 +706,7 @@ function Invoke-ExtensionOnlyInstall {
         return
     }
     $arch = Get-PeArch (Join-Path $dir $def.Exe)
-    if ($arch -ne "x64" -and $arch -ne "x86") {
+    if ($arch -ne "x64" -and $arch -ne "x86" -and $arch -ne "arm64") {
         Write-Warn ((T "ArchSkip") -f $def.Name, $arch)
         $script:ExitCode = 3
         return
