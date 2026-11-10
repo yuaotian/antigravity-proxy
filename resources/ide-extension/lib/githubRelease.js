@@ -16,7 +16,7 @@ const REPO = "yuaotian/antigravity-proxy";
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const RELEASE_PAGE = `https://github.com/${REPO}/releases/latest`;
 /** VSIX 资产里的架构标记（process.arch → 资产名片段） */
-const ARCH_TAG = Object.freeze({ x64: "x64", ia32: "x86" });
+const ARCH_TAG = Object.freeze({ x64: "x64", ia32: "x86", arm64: "arm64" });
 
 /**
  * @typedef {{ name: string, size: number, url: string }} ReleaseAsset
