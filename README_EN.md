@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/yuaotian/antigravity-proxy/actions"><img src="https://github.com/yuaotian/antigravity-proxy/actions/workflows/build.yml/badge.svg" alt="Build Status"/></a>
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="License"/></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg" alt="Platform"/>
+  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64%20%7C%20arm64-lightgrey.svg" alt="Platform"/>
 </p>
 
 <p align="center">
@@ -104,7 +104,7 @@ To pass parameters, add them at the end of the command, e.g. `... install-online
 
 ### Option 3: Download a release package
 
-Download from [Releases](https://github.com/yuaotian/antigravity-proxy/releases) (choose `x86` for 32-bit programs):
+Download from [Releases](https://github.com/yuaotian/antigravity-proxy/releases) (choose `x86` for 32-bit programs, `arm64` for Windows on ARM64):
 
 | File | For |
 |:--|:--|
@@ -254,7 +254,7 @@ Run `doctor.bat` first (read-only health check). It tells you whether the patch 
 
 | Error | Fix |
 |:--|:--|
-| `0xC0000142` / `0xC000007B` | Patch and program architecture do not match (x86 / x64), use the matching version; or runtime libraries are missing, install the Microsoft runtime bundle [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
+| `0xC0000142` / `0xC000007B` | Patch and program architecture do not match (x86 / x64 / arm64), use the matching version; or runtime libraries are missing, install the Microsoft runtime bundle [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
 | `0xC0000135` / missing `VCRUNTIME140_1.dll` | Install the runtime bundle above |
 | `0xC0000906` | Blocked by security software; add the install directory to its whitelist |
 | `10061` / `10060` in the log | Proxy app not running or wrong port / connection timed out; if the log says the port looks like an HTTP or SOCKS5 port, change `proxy.type` |
@@ -282,7 +282,7 @@ Requires Visual Studio 2022 (Desktop development with C++) and CMake. Run `.\bui
 
 ## License
 
-[BSD-2-Clause](LICENSE.txt). MinHook portions are copyright Tsuda Kageyu (`AUTHORS.txt` lists the MinHook authors).
+[BSD-2-Clause](LICENSE.txt). MinHook portions are copyright Tsuda Kageyu (`AUTHORS.txt` lists the MinHook authors); Windows ARM64 hooking uses [Microsoft Detours](third_party/detours/LICENSE.md) (MIT).
 
 ## About the Author
 

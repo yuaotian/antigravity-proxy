@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/yuaotian/antigravity-proxy/actions"><img src="https://github.com/yuaotian/antigravity-proxy/actions/workflows/build.yml/badge.svg" alt="Build Status"/></a>
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="License"/></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg" alt="Platform"/>
+  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64%20%7C%20arm64-lightgrey.svg" alt="Platform"/>
 </p>
 
 <p align="center">
@@ -104,7 +104,7 @@ Antigravity IDE 用户优先从 Open VSX 安装插件：
 
 ### 方式三：下载发布包
 
-从 [Releases](https://github.com/yuaotian/antigravity-proxy/releases) 下载（32 位程序选 `x86`）：
+从 [Releases](https://github.com/yuaotian/antigravity-proxy/releases) 下载（32 位程序选 `x86`，ARM64 设备选 `arm64`）：
 
 | 文件 | 适用 |
 |:--|:--|
@@ -254,7 +254,7 @@ Antigravity 自动更新可能会删除安装目录里的补丁文件：
 
 | 错误 | 处理 |
 |:--|:--|
-| `0xC0000142` / `0xC000007B` | 补丁与程序架构不一致（x86 / x64），换对应版本；或缺少运行库，安装 [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
+| `0xC0000142` / `0xC000007B` | 补丁与程序架构不一致（x86 / x64 / arm64），换对应版本；或缺少运行库，安装 [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
 | `0xC0000135` / 缺少 `VCRUNTIME140_1.dll` | 安装上面的运行库合集 |
 | `0xC0000906` | 被安全软件拦截，把安装目录加入白名单 |
 | 日志里 `10061` / `10060` | 代理软件未启动或端口错误 / 连接超时；日志提示「可能是 HTTP 代理端口」/「可能是 SOCKS5 端口」时改 `proxy.type` |
@@ -282,7 +282,7 @@ Antigravity 自动更新可能会删除安装目录里的补丁文件：
 
 ## 许可证
 
-[BSD-2-Clause](LICENSE.txt)。MinHook 部分版权归 Tsuda Kageyu 所有（`AUTHORS.txt` 为 MinHook 作者名单）。
+[BSD-2-Clause](LICENSE.txt)。MinHook 部分版权归 Tsuda Kageyu 所有（`AUTHORS.txt` 为 MinHook 作者名单）；Windows ARM64 Hook 适配基于 [Microsoft Detours](third_party/detours/LICENSE.md)（MIT）。
 
 ## 关于作者
 
