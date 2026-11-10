@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/yuaotian/antigravity-proxy/actions"><img src="https://github.com/yuaotian/antigravity-proxy/actions/workflows/build.yml/badge.svg" alt="Статус сборки"/></a>
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="Лицензия"/></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg" alt="Платформа"/>
+  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64%20%7C%20arm64-lightgrey.svg" alt="Платформа"/>
 </p>
 
 <p align="center">
@@ -129,7 +129,7 @@ Antigravity-Proxy — это патч прокси (DLL), который нач�
 
 ### Способ 3: скачать пакет релиза
 
-Скачайте из [Releases](https://github.com/yuaotian/antigravity-proxy/releases) (для 32-разрядных программ выбирайте `x86`):
+Скачайте из [Releases](https://github.com/yuaotian/antigravity-proxy/releases) (для 32-разрядных программ выбирайте `x86`, для Windows на ARM64 — `arm64`):
 
 | Файл | Для чего |
 |:--|:--|
@@ -279,7 +279,7 @@ Invoke-WebRequest "https://open-vsx.org/api/yuaotian/antigravity-proxy/2.6.3/fil
 
 | Ошибка | Решение |
 |:--|:--|
-| `0xC0000142` / `0xC000007B` | Архитектура патча не совпадает с программой (x86 / x64) — возьмите подходящую версию; либо не хватает библиотек времени выполнения — установите набор библиотек времени выполнения Microsoft [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
+| `0xC0000142` / `0xC000007B` | Архитектура патча не совпадает с программой (x86 / x64 / arm64) — возьмите подходящую версию; либо не хватает библиотек времени выполнения — установите набор библиотек времени выполнения Microsoft [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
 | `0xC0000135` / нет `VCRUNTIME140_1.dll` | Установите набор библиотек, указанный выше |
 | `0xC0000906` | Заблокировано защитным ПО — добавьте каталог установки в исключения |
 | `10061` / `10060` в журнале | Прокси-клиент не запущен или неверный порт / истекло время ожидания подключения; если журнал сообщает, что порт похож на HTTP или SOCKS5, измените `proxy.type` |
@@ -307,7 +307,7 @@ Invoke-WebRequest "https://open-vsx.org/api/yuaotian/antigravity-proxy/2.6.3/fil
 
 ## Лицензия
 
-[BSD-2-Clause](LICENSE.txt). Авторские права на часть MinHook принадлежат Tsuda Kageyu (`AUTHORS.txt` — список авторов MinHook).
+[BSD-2-Clause](LICENSE.txt). Авторские права на часть MinHook принадлежат Tsuda Kageyu (`AUTHORS.txt` — список авторов MinHook); перехват для Windows ARM64 использует [Microsoft Detours](third_party/detours/LICENSE.md) (MIT).
 
 ## Об авторе
 
