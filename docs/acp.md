@@ -45,17 +45,31 @@ Registry 中的 Windows 包（`agy-acp-server-1.5.0-windows-x86_64.zip`，SHA256
 | `agy_acp_server.exe`（58 MB） | PyInstaller 打包的 Python 3.14 | KERNEL32 / ADVAPI32 / USER32 | ACP 协议适配层，内含 `acp.*`、`acp_server.oauth.*`、`ccpa_connection.{ccpa_client, oauth_manager, proxy_server}`、`telemetry`、`google.genai` 等 |
 | `localharness_external.exe`（155 MB） | Go（与 agy.exe 同源） | ADVAPI32 / dbghelp / KERNEL32 / WS2_32 | Agent 引擎，访问 `cloudcode-pa` / `aiplatform` / `generativelanguage` / `oauth2.googleapis.com` |
 
-推断的进程树：
+进程树（前两层已在 2026-11-17 运行期验证，见 2.4）：
 
 ```
 ACP 客户端（idea64 / zed / studio64 …）
- └─ agy_acp_server.exe            PyInstaller 引导进程
-     └─ agy_acp_server.exe        Python 主体：ACP / OAuth / CloudCode 请求（自己也直连 Google）
-         └─ localharness_external.exe   Go 引擎
+ └─ agy_acp_server.exe            PyInstaller 引导进程                 ✅ 已验证
+     └─ agy_acp_server.exe        Python 主体：ACP / OAuth / CloudCode  ✅ 已验证
+         └─ localharness_external.exe   Go 引擎（登录后创建会话时启动） ⏳ 需登录后验证
              └─ 工具子进程（powershell / git …）
 ```
 
 关键点：**Python 层和 Go 层都会访问 Google**，必须两层都进代理；而 `agy_acp_server.exe` 引导进程只导入系统 KnownDLLs，没有可侧载 DLL 的位置。
+
+### 2.4 运行期验证记录（2026-11-17，agy-acp-server 1.5.0，Google LLC 签名有效）
+
+用 `agy-acp-proxy.exe` 拉起 Registry 版服务端，只发送 ACP `initialize` 与 `session/new`（不发 prompt）：
+
+| 检查项 | 结果 |
+|:--|:--|
+| `initialize` 经包装器的 stdio 往返 | ✅ 6.9 秒返回 `protocolVersion: 1`、`authMethods`（oauth-personal / oauth-business / gemini-api-key / agent-platform …） |
+| 包装器 → 引导进程注入 | ✅ `[ACP 包装器] 已注入并启动目标`，DLL 以全量模式安装 Hook |
+| 引导进程 → Python 主体注入（兼容规则） | ✅ `[兼容/ACP] agy_acp_server.exe 派生了关键子进程 agy_acp_server.exe` → `[成功] 已注入新建进程` |
+| 关闭 stdin 后退出 | ✅ 正常退出（exit=0），无残留进程 |
+| `session/new` | 返回 `-32000 Authentication required`：**Registry 版使用独立的登录状态**（`~/.gemini/antigravity-acp/settings.json` 的 `auth.type`），不复用 `agy` CLI 的登录，需要在编辑器里先登录一次 |
+
+`initialize` 阶段没有任何外网连接；`localharness_external.exe` 的注入与 `*.googleapis.com` 隧道需在编辑器里登录后按第 5 节自行确认。
 
 ---
 
@@ -174,7 +188,8 @@ JetBrains / Zed 在 Registry 里点 “Install” 后，编辑器直接启动 `a
 - 只支持 Windows x64 / x86；Registry 提供的 windows-aarch64 暂不支持；
 - 包装器使用远程线程注入（与 DLL 的子进程注入同一技术），个别安全软件可能误报，需要加白；
 - 包装器退出时会结束整棵 Agent 进程树（Job 对象）；Agent 若需要保留后台进程，应使用 `CREATE_BREAKAWAY_FROM_JOB`；
-- 进程树与“Python 层也直连 Google”的结论来自静态分析，真实网络链路以日志为准。
+- 包装器 → 引导进程 → Python 主体的注入已运行期验证；“Python 层也直连 Google”与 localharness 的网络链路来自静态分析，登录后以日志为准；
+- Registry 版 `agy_acp_server` 与 `agy acp` 的登录状态互相独立，换用另一种服务端时需要重新登录。
 
 ---
 
