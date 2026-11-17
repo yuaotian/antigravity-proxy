@@ -90,4 +90,23 @@ inline bool IsAntigravityHostProcessName(const std::string& processName) {
            lowerName == "antigravity ide.exe";
 }
 
+// ACP Registry 分发的 Google Antigravity ACP 服务端（antigravity-acp/agent.json 中 Windows 的 cmd）。
+// 它是 PyInstaller 打包的 Python 程序：引导进程会再拉起一个同名子进程作为真正的 Python 主体。
+// 注意："agy_acp_server.exe" 并不包含子串 "agy.exe"，旧的 target_processes 无法覆盖它。
+inline bool IsAgyAcpServerProcessName(const std::string& processName) {
+    const std::string lowerName = ToLowerAsciiCopy(processName);
+    return lowerName == "agy_acp_server.exe" || lowerName == "agy_acp_server";
+}
+
+// agy_acp_server.exe 需要继承注入的关键子进程：
+// - agy_acp_server.exe：PyInstaller 引导进程 → Python 主体（负责 OAuth / CloudCode 请求）；
+// - localharness_external.exe：Go 编写的 Agent 引擎（访问 *.googleapis.com）。
+// 只放行这两个名字，工具子进程（powershell/git 等）保持原有 filtered 行为。
+inline bool IsAcpServerChainChildName(const std::string& processName) {
+    const std::string lowerName = ToLowerAsciiCopy(processName);
+    return IsAgyAcpServerProcessName(lowerName) ||
+           lowerName == "localharness_external.exe" ||
+           lowerName == "localharness_external";
+}
+
 } // namespace Hooks

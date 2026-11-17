@@ -174,6 +174,20 @@ if(WIN32)
   if(NOT MSVC AND STATIC_RUNTIME)
     target_link_options(AntigravityLauncher PRIVATE -static-libstdc++ -static-libgcc -municode)
   endif()
+
+  # ACP 启动包装器（Issue #164）：控制台程序，stdio 直接继承给真正的 Agent，
+  # 注入同目录的 antigravity_proxy.dll / version.dll 后透传退出码。
+  add_executable(agy-acp-proxy
+    "src/launcher/AcpProxyLauncher.cpp"
+  )
+  target_include_directories(agy-acp-proxy PRIVATE "src/")
+  target_compile_definitions(agy-acp-proxy PRIVATE UNICODE _UNICODE)
+  if(NOT MSVC)
+    target_link_options(agy-acp-proxy PRIVATE -municode)
+    if(STATIC_RUNTIME)
+      target_link_options(agy-acp-proxy PRIVATE -static-libstdc++ -static-libgcc)
+    endif()
+  endif()
 endif()
 
 ###################
@@ -204,6 +218,15 @@ if(BUILD_TESTS)
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
   )
   add_test(NAME process_name_tests COMMAND process_name_tests)
+
+  # ACP 包装器纯逻辑（命令行切分、DLL 候选、目录解析）
+  add_executable(acp_launcher_logic_tests
+    "tests/test_acp_launcher_logic.cpp"
+  )
+  target_include_directories(acp_launcher_logic_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+  add_test(NAME acp_launcher_logic_tests COMMAND acp_launcher_logic_tests)
 
   # IDE 配套插件检测纯逻辑（主进程判定、命令行参数、product.json、extensions.json）
   add_executable(ide_extension_tests

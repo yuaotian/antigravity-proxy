@@ -36,6 +36,8 @@
 #include "ProcessName.hpp"
 
 using Hooks::GetCreateProcessTargetBaseNameA;
+using Hooks::IsAcpServerChainChildName;
+using Hooks::IsAgyAcpServerProcessName;
 using Hooks::IsLanguageServerProcessName;
 using Hooks::ToLowerAsciiCopy;
 
@@ -258,6 +260,8 @@ static std::once_flag g_runtimeConfigLogOnce;
 // 新版 Antigravity 可能把部分对话链路下沉到 language_server 派生的 node.exe；
 // 这里仅对该组合做一次兼容提示，避免 filtered 模式下静默漏注入。
 static std::once_flag g_languageServerNodeCompatLogOnce;
+// ACP 服务端进程链兼容注入的提示只记录一次（Issue #164）
+static std::once_flag g_acpServerCompatLogOnce;
 // IP/日志联合诊断只需要在主 Antigravity 进程里启动一次。
 static std::once_flag g_agentIpDiagnosisThreadOnce;
 
@@ -801,6 +805,26 @@ static void LogLanguageServerNodeCompatInjectOnce(const std::string& childProces
             " 派生了关键子进程 " + childProcessName +
             "；为兼容新版 Antigravity 对话链路，filtered 模式下将自动继承注入。"
             " 如需关闭该行为，请将 node.exe 加入 child_injection_exclude。");
+    });
+}
+
+// 兼容说明（Issue #164）：ACP Registry 分发的 agy_acp_server.exe 由 JetBrains/Zed 等编辑器直接拉起，
+// 父进程不是 Antigravity，旧配置的 target_processes 也不包含它的子进程名。
+// 当前进程已被注入（通常由 agy-acp-proxy.exe 包装器完成）时，只对
+// `agy_acp_server.exe -> agy_acp_server.exe / localharness_external.exe` 这条链路做窄范围自动继承注入。
+static bool ShouldAutoInjectAcpServerChild(const Core::Config& config, const std::string& childProcessName) {
+    if (!config.childInjection) return false;
+    if (ToLowerAsciiCopy(config.childInjectionMode) == "inherit") return false;
+    if (!IsAcpServerChainChildName(childProcessName)) return false;
+    return IsAgyAcpServerProcessName(GetCurrentProcessBaseName());
+}
+
+static void LogAcpServerCompatInjectOnce(const std::string& childProcessName) {
+    std::call_once(g_acpServerCompatLogOnce, [&childProcessName]() {
+        Core::Logger::Warn(
+            "[兼容/ACP] agy_acp_server.exe 派生了关键子进程 " + childProcessName +
+            "；filtered 模式下将自动继承注入（Python 主体与 localharness 引擎都需要走代理）。"
+            " 如需关闭该行为，请将对应进程名加入 child_injection_exclude。");
     });
 }
 
@@ -3820,7 +3844,10 @@ BOOL WINAPI DetourCreateProcessW(
         
         const bool excluded = config.IsChildInjectionExcluded(appName);
         const bool compatInject = (!excluded) && ShouldAutoInjectLanguageServerNodeChild(config, appName);
-        const bool shouldInject = (!excluded) && (config.childInjectionMode == "inherit" || config.ShouldInject(appName) || compatInject);
+        // Issue #164：ACP 服务端进程链（agy_acp_server → Python 主体 / localharness 引擎）窄范围继承注入
+        const bool acpCompatInject = (!excluded) && ShouldAutoInjectAcpServerChild(config, appName);
+        const bool shouldInject = (!excluded) &&
+            (config.childInjectionMode == "inherit" || config.ShouldInject(appName) || compatInject || acpCompatInject);
 
         // 检查是否需要注入子进程（受 child_injection_mode/排除列表影响）
         if (!shouldInject) {
@@ -3852,6 +3879,9 @@ BOOL WINAPI DetourCreateProcessW(
         } else {
             if (compatInject) {
                 LogLanguageServerNodeCompatInjectOnce(appName);
+            }
+            if (acpCompatInject) {
+                LogAcpServerCompatInjectOnce(appName);
             }
             Core::Logger::Info("拦截到进程创建，准备注入 DLL: " + diagnosticContext);
             
@@ -3929,7 +3959,10 @@ BOOL WINAPI DetourCreateProcessA(
         
         const bool excluded = config.IsChildInjectionExcluded(appName);
         const bool compatInject = (!excluded) && ShouldAutoInjectLanguageServerNodeChild(config, appName);
-        const bool shouldInject = (!excluded) && (config.childInjectionMode == "inherit" || config.ShouldInject(appName) || compatInject);
+        // Issue #164：ACP 服务端进程链（agy_acp_server → Python 主体 / localharness 引擎）窄范围继承注入
+        const bool acpCompatInject = (!excluded) && ShouldAutoInjectAcpServerChild(config, appName);
+        const bool shouldInject = (!excluded) &&
+            (config.childInjectionMode == "inherit" || config.ShouldInject(appName) || compatInject || acpCompatInject);
 
         // 检查是否需要注入子进程（受 child_injection_mode/排除列表影响）
         if (!shouldInject) {
@@ -3961,6 +3994,9 @@ BOOL WINAPI DetourCreateProcessA(
         } else {
             if (compatInject) {
                 LogLanguageServerNodeCompatInjectOnce(appName);
+            }
+            if (acpCompatInject) {
+                LogAcpServerCompatInjectOnce(appName);
             }
             Core::Logger::Info("拦截到进程创建，准备注入 DLL: " + diagnosticContext);
             

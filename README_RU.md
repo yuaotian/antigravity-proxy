@@ -29,6 +29,7 @@ Antigravity-Proxy — это патч прокси (DLL), который нач�
 - не требует ни режима TUN, ни прав администратора;
 - поддерживает прокси SOCKS5 / HTTP (в том числе с аутентификацией по логину и паролю);
 - поддерживает **Antigravity IDE**, **Antigravity** (настольная версия) и **Antigravity CLI** (`agy`);
+- проксирует Antigravity, используемый через ACP в **JetBrains / Zed / VS Code** и других редакторах (`agy acp` и `agy_acp_server` из ACP Registry);
 - для Antigravity IDE есть расширение: состояние прокси, визуальные настройки, живой журнал, проверка внешнего IP/Gemini, самообновление расширения и автоматическое восстановление патча после обновления IDE.
 
 ## Спонсор
@@ -217,6 +218,14 @@ Invoke-WebRequest "https://open-vsx.org/api/yuaotian/antigravity-proxy/2.6.3/fil
 - после изменения перезапустите приложение;
 - все параметры (целевые процессы, правила маршрутизации, IPv6 / UDP и др.) описаны в [docs/configuration.md](docs/configuration.md).
 
+## Другие редакторы (ACP)
+
+Если Antigravity используется через ACP в JetBrains, Zed, VS Code (расширение ACP Client) и других редакторах, агента запускает сам редактор, поэтому для работы через прокси нужна обёртка `agy-acp-proxy.exe`:
+
+- **Пользователям Antigravity IDE**: нажмите «ACP-прокси для других редакторов» на боковой панели расширения — оно найдёт `agy acp` / `agy_acp_server.exe` из Registry, запишет настройки JetBrains или скопирует настройки Zed / VS Code;
+- **Вручную**: укажите в редакторе команду агента `cli/agy-acp-proxy.exe` из пакета релиза, а настоящего агента передайте аргументами, например `["C:\\Users\\<вы>\\.gemini\\bin\\agy.exe", "acp"]`;
+- Принцип работы, примеры и проверка: [docs/acp.md](docs/acp.md) (на китайском).
+
 ## Патч перестал работать после обновления приложения
 
 Автообновление Antigravity может удалить файлы патча из каталога установки:
@@ -263,6 +272,7 @@ Invoke-WebRequest "https://open-vsx.org/api/yuaotian/antigravity-proxy/2.6.3/fil
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Руководство по устранению неполадок, коды ошибок |
 | [docs/doctor.md](docs/doctor.md) | Скрипт развёртывания / проверки / восстановления |
 | [docs/ide-extension.md](docs/ide-extension.md) | Расширение для IDE |
+| [docs/acp.md](docs/acp.md) | Прокси для Antigravity через ACP в других редакторах (agy acp / agy-acp-server) |
 | [docs/wsl.md](docs/wsl.md) | Альтернативы для WSL |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Сборка, принцип работы, доработка |
 

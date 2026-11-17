@@ -270,6 +270,8 @@
       ["repairPatch", "shield", "side.repairPatch"],
       ["restartIde", "debug-restart", "side.restartIde"],
       ["openLogs", "folder-opened", "side.openLogs"],
+      // Issue #164：让 JetBrains / Zed / VS Code 经 ACP 启动的 Antigravity Agent 也走代理
+      ["setupAcp", "multiple-windows", "side.setupAcp"],
     ];
     const actionGrid = h("section", { class: "actions" },
       actions.map(([action, ic, labelKey]) =>

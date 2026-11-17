@@ -363,6 +363,18 @@ Copy-Item $dllPath.FullName -Destination (Join-Path $CliOutputDir "antigravity_p
 Copy-Item $dbghelpPath.FullName -Destination (Join-Path $CliOutputDir "dbghelp.dll") -Force
 Write-Success "CLI shim 与代理主体已复制到 output\cli"
 
+# ACP 启动包装器（Issue #164）：与 antigravity_proxy.dll / config.json 同目录即可工作，随 CLI 包发布；
+# IDE 插件 VSIX 的 payload 也会携带一份（见步骤 10.6），由插件部署到 IDE 安装目录。
+$acpProxyPath = Get-ChildItem -Path $BuildDir -Recurse -Filter "agy-acp-proxy.exe" | Where-Object $isBuildOutput |
+    Where-Object { $_.FullName -match "\\$Config\\" } |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $acpProxyPath) {
+    Write-Error "未找到 ACP 启动包装器 agy-acp-proxy.exe"
+    exit 1
+}
+Copy-Item $acpProxyPath.FullName -Destination (Join-Path $CliOutputDir "agy-acp-proxy.exe") -Force
+Write-Success "ACP 启动包装器 agy-acp-proxy.exe 已复制到 output\cli"
+
 # ============================================================
 # 步骤 8: 生成配置文件
 # ============================================================
@@ -508,7 +520,10 @@ FAILED_PRECONDITION (code 400): User location is not supported for the API use.
 #### 方式 B：手动复制部署
 - Antigravity 桌面端/IDE：复制 `ide/` 内的全部文件（`version.dll`、`config.json`、`antigravity-proxy.vsix`）到主程序目录；
   Antigravity IDE 启动后若未安装配套插件，会提示一键安装（状态栏 + 可视化设置 + 更新后自动修复）。
-- Antigravity CLI：只复制 `cli/` 内的 `dbghelp.dll`、`antigravity_proxy.dll` 与 `config.json` 到 `agy.exe` 目录。
+- Antigravity CLI：只复制 `cli/` 内的 `dbghelp.dll`、`antigravity_proxy.dll`、`agy-acp-proxy.exe` 与 `config.json` 到 `agy.exe` 目录。
+- 其它编辑器（Zed / JetBrains / VS Code）通过 ACP 使用 Antigravity：把 Agent 命令改为 `cli/agy-acp-proxy.exe`，
+  参数写真正的 Agent（如 `agy.exe acp` 或 ACP Registry 的 `agy_acp_server.exe`），详见 docs/acp.md；
+  Antigravity IDE 用户也可在插件侧栏点击「外部编辑器 ACP 代理」一键配置。
 
 两个目录不得混合复制。桌面端不需要 `dbghelp.dll`。
 
@@ -801,6 +816,10 @@ if (Test-Path $extSrc) {
         if (-not (Test-Path $pSrc)) { throw "VSIX 载荷缺失: $pSrc" }
         Copy-Item -LiteralPath $pSrc -Destination $payloadDir -Force
     }
+    # ACP 启动包装器：插件“外部编辑器 ACP 代理”向导会把它部署到 IDE 安装目录（与 version.dll / config.json 同级）
+    $acpPayloadSrc = Join-Path $CliOutputDir "agy-acp-proxy.exe"
+    if (-not (Test-Path $acpPayloadSrc)) { throw "VSIX 载荷缺失: $acpPayloadSrc" }
+    Copy-Item -LiteralPath $acpPayloadSrc -Destination $payloadDir -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "LICENSE.txt") -Destination (Join-Path $extRoot "LICENSE.txt") -Force
 
     # 4) 版本号：插件要求 semver（2.5 → 2.5.0）

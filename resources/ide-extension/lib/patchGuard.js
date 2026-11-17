@@ -16,6 +16,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { isDllLoadedInThisProcess, statOrNull } = require("./installInfo");
+const { ACP_WRAPPER_NAME } = require("./acpSupport");
 const I18n = require("../media/i18n");
 
 // 未传入翻译函数时使用简体中文
@@ -37,14 +38,53 @@ class PatchGuard {
    * @param {import("./configStore").ConfigStore} store
    * @param {string} extensionPath
    * @param {(key: string, params?: Record<string, any>) => string} [t] 翻译函数（随界面语言切换）
+   * @param {{ shouldRestoreAcpWrapper?: () => boolean }} [options]
+   *   shouldRestoreAcpWrapper：用户曾通过向导部署过 ACP 包装器时返回 true，IDE 更新清空目录后一并恢复
    */
-  constructor(info, store, extensionPath, t = DEFAULT_T) {
+  constructor(info, store, extensionPath, t = DEFAULT_T, options = {}) {
     this.t = t;
     this.info = info;
     this.store = store;
     this.payloadDir = path.join(extensionPath, "payload");
     this.payloadDll = path.join(this.payloadDir, "version.dll");
     this.payloadConfig = path.join(this.payloadDir, "config.json");
+    // ACP 启动包装器（Issue #164）：部署在 IDE 安装目录，与 version.dll / config.json 共用同一份代理配置
+    this.payloadAcpWrapper = path.join(this.payloadDir, ACP_WRAPPER_NAME);
+    this.acpWrapperPath = path.join(info.installDir, ACP_WRAPPER_NAME);
+    this.shouldRestoreAcpWrapper = options.shouldRestoreAcpWrapper || (() => false);
+  }
+
+  /**
+   * ACP 包装器状态（只读）。
+   * @returns {{ payloadAvailable: boolean, deployed: boolean, upToDate: boolean, path: string }}
+   */
+  checkAcpWrapper() {
+    const payloadAvailable = !!statOrNull(this.payloadAcpWrapper);
+    const deployed = !!statOrNull(this.acpWrapperPath);
+    const upToDate = payloadAvailable && deployed &&
+      sha256OrUndefined(this.payloadAcpWrapper) === sha256OrUndefined(this.acpWrapperPath);
+    return { payloadAvailable, deployed, upToDate, path: this.acpWrapperPath };
+  }
+
+  /**
+   * 部署/更新 ACP 包装器到 IDE 安装目录（内容一致时不重复写入）。
+   * 正在被编辑器使用的旧包装器无法覆盖（EBUSY/EPERM），此时返回错误由调用方提示稍后重试。
+   * @returns {{ ok: true, changed: boolean, path: string } | { ok: false, error: string }}
+   */
+  deployAcpWrapper() {
+    const s = this.checkAcpWrapper();
+    if (!s.payloadAvailable) return { ok: false, error: this.t("acp.noPayload") };
+    if (s.upToDate) return { ok: true, changed: false, path: s.path };
+    try {
+      atomicCopy(this.payloadAcpWrapper, this.acpWrapperPath, this.t);
+      return { ok: true, changed: true, path: s.path };
+    } catch (e) {
+      const err = /** @type {NodeJS.ErrnoException} */ (e);
+      if (err.code === "EPERM" || err.code === "EACCES" || err.code === "EBUSY") {
+        return { ok: false, error: this.t("acp.wrapperBusy", { path: s.path }) };
+      }
+      return { ok: false, error: `${err.code || "ERROR"}: ${err.message}` };
+    }
   }
 
   /** @returns {PatchStatus} */
@@ -94,6 +134,11 @@ class PatchGuard {
           atomicCopy(this.payloadConfig, this.info.configPath, this.t);
           restored.push(this.t("ext.restoredConfigDefault"));
         }
+      }
+      // 只恢复用户曾部署过的 ACP 包装器：其它编辑器的 Agent 配置指向这个路径，缺失会导致 Agent 无法启动
+      if (this.shouldRestoreAcpWrapper() && !statOrNull(this.acpWrapperPath) && statOrNull(this.payloadAcpWrapper)) {
+        atomicCopy(this.payloadAcpWrapper, this.acpWrapperPath, this.t);
+        restored.push(ACP_WRAPPER_NAME);
       }
       return { ok: true, restored };
     } catch (e) {

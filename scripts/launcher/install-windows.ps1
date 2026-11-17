@@ -931,7 +931,8 @@ function Invoke-Uninstall-Ide([string]$TargetAppDir) {
 
 function Invoke-Uninstall-Cli([string]$TargetAgyDir) {
     if ($TargetAgyDir -and (Test-Path $TargetAgyDir)) {
-        foreach ($f in @("dbghelp.dll", "antigravity_proxy.dll")) {
+        # agy-acp-proxy.exe：ACP 启动包装器（Issue #164），随 CLI 补丁部署，卸载时一并清理
+        foreach ($f in @("dbghelp.dll", "antigravity_proxy.dll", "agy-acp-proxy.exe")) {
             $p = Join-Path $TargetAgyDir $f
             if (Test-Path $p) {
                 try { Remove-Item -LiteralPath $p -Force; Write-Ok "Removed $f" } catch { }

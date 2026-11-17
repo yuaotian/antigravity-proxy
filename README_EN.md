@@ -29,6 +29,7 @@ Antigravity-Proxy is a proxy patch (DLL) that works once you put it in the Antig
 - No TUN mode and no administrator rights needed;
 - Supports SOCKS5 / HTTP proxies (including username/password authentication);
 - Supports **Antigravity IDE**, **Antigravity** (desktop) and **Antigravity CLI** (`agy`);
+- Proxies Antigravity used via ACP in **JetBrains / Zed / VS Code** and other editors (`agy acp` and `agy_acp_server` from the ACP Registry);
 - Antigravity IDE comes with a companion extension: proxy status, visual settings, live logs, egress IP/Gemini checks, extension self-update, and automatic patch restore after IDE updates.
 
 ## Sponsor
@@ -217,6 +218,14 @@ The config file is `config.json` in the install directory. The proxy address is 
 - Restart the app after changes;
 - For all options (target processes, routing rules, IPv6 / UDP, etc.) see [docs/configuration.md](docs/configuration.md).
 
+## Other Editors (ACP)
+
+When you use Antigravity via ACP in JetBrains, Zed, VS Code (ACP Client extension) or other editors, the agent is started by that editor, so it must go through the launcher wrapper `agy-acp-proxy.exe` to use the proxy:
+
+- **Antigravity IDE users**: click "ACP Proxy for Other Editors" in the extension sidebar. It detects `agy acp` / the Registry `agy_acp_server.exe` and writes the JetBrains config or copies the Zed / VS Code config for you;
+- **Manual setup**: change the agent command in your editor to `cli/agy-acp-proxy.exe` from the release package and pass the real agent as arguments, e.g. `["C:\\Users\\<you>\\.gemini\\bin\\agy.exe", "acp"]`;
+- How it works, config examples and verification: [docs/acp.md](docs/acp.md) (Chinese).
+
 ## Patch Gone After an App Update
 
 Antigravity auto-updates may delete the patch files in the install directory:
@@ -263,6 +272,7 @@ For more troubleshooting steps see [docs/troubleshooting.md](docs/troubleshootin
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Troubleshooting guide, error codes |
 | [docs/doctor.md](docs/doctor.md) | One-click deploy / health check / repair script |
 | [docs/ide-extension.md](docs/ide-extension.md) | IDE extension |
+| [docs/acp.md](docs/acp.md) | Proxy for Antigravity used via ACP in other editors (agy acp / agy-acp-server) |
 | [docs/wsl.md](docs/wsl.md) | WSL alternatives |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Building, how it works, further development |
 

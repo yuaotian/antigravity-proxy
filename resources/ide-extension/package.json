@@ -167,6 +167,12 @@
         "title": "%command.switchLanguage%",
         "category": "Antigravity Proxy",
         "icon": "$(globe)"
+      },
+      {
+        "command": "antigravityProxy.setupAcp",
+        "title": "%command.setupAcp%",
+        "category": "Antigravity Proxy",
+        "icon": "$(multiple-windows)"
       }
     ],
     "configuration": {
@@ -193,6 +199,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%config.autoRestore%"
+        },
+        "antigravityProxy.acp.detectOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.acpDetect%"
         },
         "antigravityProxy.statusBar.enabled": {
           "type": "boolean",

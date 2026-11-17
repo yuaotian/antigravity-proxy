@@ -29,6 +29,7 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 - 不需要 TUN 模式，也不需要管理员权限；
 - 支持 SOCKS5 / HTTP 代理（含账号密码认证）；
 - 支持 **Antigravity IDE**、**Antigravity**（桌面版）与 **Antigravity CLI**（`agy`）；
+- 支持在 **JetBrains / Zed / VS Code** 等编辑器里经 ACP 使用 Antigravity（`agy acp` 与 ACP Registry 的 `agy_acp_server`）时走代理；
 - Antigravity IDE 附带配套插件：状态栏代理状态、可视化设置、实时日志、出口 IP/Gemini 检测、插件自更新，IDE 更新后自动恢复补丁。
 
 ## 赞助商
@@ -217,6 +218,14 @@ Invoke-WebRequest "https://open-vsx.org/api/yuaotian/antigravity-proxy/2.6.3/fil
 - 修改后需重启应用；
 - 完整配置项（目标进程、路由规则、IPv6 / UDP 等）见 [docs/configuration.md](docs/configuration.md)。
 
+## 其它编辑器（ACP）
+
+在 JetBrains、Zed、VS Code（ACP Client 扩展）等编辑器里通过 ACP 使用 Antigravity 时，Agent 由这些编辑器启动，需要经过启动包装器 `agy-acp-proxy.exe` 才会走代理：
+
+- **Antigravity IDE 用户**：插件侧栏点击「外部编辑器 ACP 代理」，自动检测 `agy acp` / Registry 版 `agy_acp_server.exe`，一键写入 JetBrains 配置或复制 Zed / VS Code 配置；
+- **手动配置**：把编辑器里的 Agent 命令改为发布包 `cli/agy-acp-proxy.exe`，参数写真正的 Agent，例如 `["C:\\Users\\<你>\\.gemini\\bin\\agy.exe", "acp"]`；
+- 原理、配置示例与验证方法见 [docs/acp.md](docs/acp.md)。
+
 ## 应用更新后补丁失效
 
 Antigravity 自动更新可能会删除安装目录里的补丁文件：
@@ -263,6 +272,7 @@ Antigravity 自动更新可能会删除安装目录里的补丁文件：
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 故障排查手册、错误码 |
 | [docs/doctor.md](docs/doctor.md) | 一键部署 / 体检 / 修复脚本 |
 | [docs/ide-extension.md](docs/ide-extension.md) | IDE 插件 |
+| [docs/acp.md](docs/acp.md) | 其它编辑器经 ACP 使用 Antigravity 时走代理（agy acp / agy-acp-server） |
 | [docs/wsl.md](docs/wsl.md) | WSL 替代方案 |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 编译构建、工作原理、二次开发 |
 

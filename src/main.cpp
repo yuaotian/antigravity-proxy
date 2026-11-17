@@ -28,6 +28,41 @@ namespace VersionProxy {
 }
 
 namespace {
+    // ============================================================================
+    // 同进程单实例保护（Issue #164 ACP 支持引入）
+    // 同一进程可能经由两条路径各加载一份代理主体：
+    //   1) agy.exe 目录下的 dbghelp.dll 侧载 antigravity_proxy.dll；
+    //   2) 父进程 CreateProcess Hook 或 agy-acp-proxy.exe 包装器注入另一路径下的 DLL。
+    // 路径不同即为两个独立模块、各自持有一套 MinHook，重复安装网络 Hook 会导致重复握手甚至崩溃。
+    // 以 PID 命名的互斥量在本进程内唯一：首个“配置可用”的实例持有它并安装 Hook，后来者只记录日志。
+    // ============================================================================
+    static HANDLE g_hookOwnerMutex = NULL;
+    static bool g_ownsHooks = false;
+
+    static bool TryClaimProcessHookOwnership() {
+        wchar_t name[64] = {};
+        swprintf(name, sizeof(name) / sizeof(name[0]), L"Local\\AntigravityProxy_Hooks_%lu",
+                 static_cast<unsigned long>(GetCurrentProcessId()));
+        HANDLE mutex = CreateMutexW(NULL, FALSE, name);
+        if (mutex == NULL) {
+            // 互斥量创建失败时保持历史行为（照常安装），避免保护逻辑本身导致代理失效
+            return true;
+        }
+        if (GetLastError() == ERROR_ALREADY_EXISTS) {
+            CloseHandle(mutex);
+            return false;
+        }
+        g_hookOwnerMutex = mutex;
+        return true;
+    }
+
+    static void ReleaseProcessHookOwnership() {
+        if (g_hookOwnerMutex != NULL) {
+            CloseHandle(g_hookOwnerMutex);
+            g_hookOwnerMutex = NULL;
+        }
+    }
+
     static bool IsCommandLineWhitespace(wchar_t value) {
         return value == L' ' || value == L'\t' || value == L'\r' || value == L'\n';
     }
@@ -243,6 +278,14 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
             break;
         }
 
+        // 同进程单实例保护：放在配置加载成功之后，避免“配置损坏的实例”占位导致另一份可用实例被跳过。
+        if (!TryClaimProcessHookOwnership()) {
+            Core::Logger::Warn("[单实例] 当前进程已有另一份代理实例安装了 Hook（常见于 dbghelp 侧载与注入同时发生），"
+                               "本实例跳过 Hook 安装，仅保留 version.dll 导出转发。");
+            break;
+        }
+        g_ownsHooks = true;
+
         // 诊断构建：只旁路 Chromium NetworkService，用于区分宿主进程角色对本地 TLS 的影响。
         const std::string processName = GetCurrentProcessBaseName();
         const bool bypassNetworkService =
@@ -268,7 +311,12 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
         }
 
         // lpvReserved 为空表示动态卸载，或 DLL 加载失败后的回滚；此时保留必要清理。
-        Hooks::Uninstall();
+        // 只有真正安装过 Hook 的实例才执行卸载并释放所有权，避免“被跳过的副本”误卸载另一实例的状态。
+        if (g_ownsHooks) {
+            Hooks::Uninstall();
+            ReleaseProcessHookOwnership();
+            g_ownsHooks = false;
+        }
         VersionProxy::Uninitialize();
         Core::Logger::Info("DLL 被显式释放或加载失败回滚：已完成 Hooks 与版本代理清理");
         break;

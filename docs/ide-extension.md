@@ -46,12 +46,14 @@ lib/statusBar.js                    单一状态栏条目（出口 IP / Gemini /
 lib/webviewHtml.js                  Webview CSP/HTML 生成（nonce、资源 URI、首帧数据）
 lib/configPanel.js                  Webview 宿主侧：单例面板、CSP、消息路由、保存前二次校验
 lib/restart.js                      两段式重启器
+lib/acpSupport.js                   外部编辑器 ACP（Issue #164）：检测 agy acp / Registry 版 agy_acp_server、生成编辑器配置（纯逻辑）
+lib/acpWizard.js                    ACP 一键向导与启动检测（部署 agy-acp-proxy.exe、写 JetBrains acp.json、复制 Zed/VS Code 片段）
 media/panel.js + panel.css          配置面板前端（schema 驱动表单，仅用 --vscode-* 主题变量）
 media/sidebar.js + sidebar.css      左侧栏前端（状态卡片 + IP + Gemini + 紧凑日志 + 操作）
 media/logview.js + logview.css      日志窗口前端（级别筛选 / 搜索高亮 / 暂停 / 复制 / 打开文件）
 media/i18n.js                       运行时三语词典（UMD，宿主与 Webview 共用）
 package.nls*.json                   命令标题 / 设置描述三语（VS Code 原生本地化）
-payload/                            构建生成：同版本 version.dll + 默认 config.json（仓库中不存在）
+payload/                            构建生成：同版本 version.dll + 默认 config.json + agy-acp-proxy.exe（仓库中不存在）
 ```
 
 设计取舍：
@@ -326,7 +328,9 @@ IDE 没有“重启应用”命令（只有 `workbench.action.quit` / `reloadWin
 
 ## 10. 已知限制
 
-- 仅 Windows 桌面端；CLI `agy` 不适用。
+- 仅 Windows 桌面端；CLI `agy` 不适用（但可用侧栏「外部编辑器 ACP 代理」让其它编辑器启动的 `agy acp` 走代理，见 [docs/acp.md](acp.md)）。
+- ACP 向导只能自动改写**严格 JSON** 的 `~/.jetbrains/acp.json`；Zed `settings.json` 常含注释，只复制片段并打开文件，由用户粘贴。
+- ACP 启动检测只扫描 JetBrains / Zed / Android Studio / codeg 的已知根目录（有界扫描，深度 7、最多 3000 个目录），其它客户端请用向导里的“选择其它可执行文件”。
 - **更新后的第一个会话没有代理**：补丁在启动后才被恢复，必须重启一次才会加载（插件会提示并可一键重启）。
 - `payload` 中的 DLL 与构建架构一致（x64 发布包内的插件携带 x64 DLL，x86 同理），须与 IDE 架构匹配；
   插件版本应与发布包同步升级。

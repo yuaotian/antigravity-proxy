@@ -11,6 +11,7 @@
  * - 配置面板：可视化编辑安装目录下的 config.json，保存后一键重启 IDE 生效
  * - 补丁守护：IDE 更新清除 version.dll / config.json 后，启动时自动从插件内置副本恢复
  * - 插件自更新：本地代理 → GitHub 镜像 → 直连，下载后校验 SHA256，再安装并提示重载
+ * - 外部编辑器 ACP 代理（Issue #164）：检测 agy acp / agy_acp_server，一键为 JetBrains / Zed / VS Code 配置包装器
  * - 多语言：简体中文 / English / Русский
  */
 
@@ -33,6 +34,7 @@ const { probeProxy } = require("./lib/proxyProbe");
 const { scanLocalProxies } = require("./lib/proxyScan");
 const { restartIde } = require("./lib/restart");
 const { findMissingTargets, withTargetsAdded } = require("./lib/configHealth");
+const { runAcpSetup, maybeHintAcp, ACP_DEPLOYED_KEY } = require("./lib/acpWizard");
 
 const CONFIG_SECTION = "antigravityProxy";
 // 首次引导只执行一次（全局状态，不随工作区变化）
@@ -53,14 +55,17 @@ function activate(context) {
   if (!info.supported) {
     // 非 Windows：代理补丁为 version.dll 劫持方案，不适用；命令给出明确说明而不是静默失败
     const unsupported = () => vscode.window.showInformationMessage(tr("ext.unsupported"));
-    for (const id of ["openSettings", "testProxy", "repairPatch", "restartIde", "openLogs", "scanProxy", "openLogsWindow", "checkGemini", "refreshIp", "checkUpdate", "focusSidebar", "switchLanguage"]) {
+    for (const id of ["openSettings", "testProxy", "repairPatch", "restartIde", "openLogs", "scanProxy", "openLogsWindow", "checkGemini", "refreshIp", "checkUpdate", "focusSidebar", "switchLanguage", "setupAcp"]) {
       context.subscriptions.push(vscode.commands.registerCommand(`${CONFIG_SECTION}.${id}`, unsupported));
     }
     return;
   }
 
   const store = new ConfigStore(info.configPath, context.globalStorageUri.fsPath, tr);
-  const guard = new PatchGuard(info, store, context.extensionPath, tr);
+  // 用户部署过 ACP 包装器时，IDE 更新清空安装目录后由补丁守护一并恢复（其它编辑器的配置指向它）
+  const guard = new PatchGuard(info, store, context.extensionPath, tr, {
+    shouldRestoreAcpWrapper: () => !!context.globalState.get(ACP_DEPLOYED_KEY),
+  });
   const iconUri = vscode.Uri.joinPath(context.extensionUri, "media", "icon.png");
   const statusBar = new ProxyStatusBar(vscode, tr, iconUri);
   const extVersion = String(context.extension?.packageJSON?.version || "0.0.0");
@@ -309,6 +314,10 @@ function activate(context) {
 
   const openLogsWindow = () => logView?.reveal();
 
+  /** 外部编辑器 ACP 代理向导：命令面板、侧栏按钮与启动提示共用同一套依赖 */
+  const acpDeps = () => ({ vscode, context, guard, t: tr, log });
+  const setupAcp = () => runAcpSetup(acpDeps());
+
   /** 侧边栏动作表：webview 只发 action 名称，具体行为都在宿主侧 */
   const sidebarActions = {
     openSettings,
@@ -326,6 +335,7 @@ function activate(context) {
     pickLanguage,
     reloadWindow: () => vscode.commands.executeCommand("workbench.action.reloadWindow"),
     refreshLogs: () => logService.rescan(),
+    setupAcp,
   };
 
   const getSettings = () => {
@@ -389,6 +399,7 @@ function activate(context) {
     vscode.commands.registerCommand(`${CONFIG_SECTION}.checkUpdate`, () => updater.check({ manual: true })),
     vscode.commands.registerCommand(`${CONFIG_SECTION}.applyUpdate`, () => updater.downloadAndInstall()),
     vscode.commands.registerCommand(`${CONFIG_SECTION}.switchLanguage`, pickLanguage),
+    vscode.commands.registerCommand(`${CONFIG_SECTION}.setupAcp`, setupAcp),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(`${CONFIG_SECTION}.language`)) {
         t = I18n.createT(currentLang());
@@ -481,10 +492,23 @@ function activate(context) {
   void refresh(true);
   void maybeOnboard();
 
+  // ACP 包装器随插件升级：部署过的用户静默更新到插件内置版本（被编辑器占用时跳过，下次启动再试）
+  if (context.globalState.get(ACP_DEPLOYED_KEY) && guard.check().dllExists) {
+    const r = guard.deployAcpWrapper();
+    if (r.ok && r.changed) log("info", `ACP：包装器已随插件更新 ${r.path}`);
+    else if (!r.ok) log("warn", `ACP：包装器更新跳过（${r.error}）`);
+  }
+
   // 出口 IP 与 Gemini 检测延后执行：避开启动高峰，且保证激活流程尽快返回
   const startupTimers = [
     setTimeout(() => void ipInfo.get(), 2500),
     setTimeout(() => void runGeminiCheck(), 4000),
+    // 外部编辑器 ACP 检测放在最后：只读配置文件 + 有界目录扫描，发现未走代理的 Agent 时提示一次
+    setTimeout(() => void maybeHintAcp({
+      ...acpDeps(),
+      version: extVersion,
+      enabled: () => vscode.workspace.getConfiguration(CONFIG_SECTION).get("acp.detectOnStartup", true),
+    }).catch((e) => log("warn", `ACP 检测失败：${/** @type {Error} */ (e).message || String(e)}`)), 15000),
   ];
   context.subscriptions.push({ dispose: () => { for (const timer of startupTimers) clearTimeout(timer); } });
 

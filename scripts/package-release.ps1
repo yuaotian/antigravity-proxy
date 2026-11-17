@@ -30,6 +30,8 @@ $requiredFiles = @(
     "ide\config.json",
     "cli\dbghelp.dll",
     "cli\antigravity_proxy.dll",
+    # ACP 启动包装器（Issue #164）：其它编辑器经 ACP 启动 Antigravity Agent 时注入代理
+    "cli\agy-acp-proxy.exe",
     "cli\config.json",
     "config-web.html",
     "使用说明.md",

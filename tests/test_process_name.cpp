@@ -44,5 +44,33 @@ int main() {
     assert(!IsAntigravityHostProcessName("language_server.exe"));
     assert(!IsAntigravityHostProcessName("node.exe"));
 
+    // Issue #164：ACP Registry 版服务端进程名识别（大小写不敏感，带/不带扩展名）。
+    using Hooks::IsAcpServerChainChildName;
+    using Hooks::IsAgyAcpServerProcessName;
+    assert(IsAgyAcpServerProcessName("agy_acp_server.exe"));
+    assert(IsAgyAcpServerProcessName("AGY_ACP_SERVER.EXE"));
+    assert(IsAgyAcpServerProcessName("agy_acp_server"));
+    // agy.exe（CLI）不是 ACP Registry 服务端，不应触发 ACP 进程链兼容规则。
+    assert(!IsAgyAcpServerProcessName("agy.exe"));
+    assert(!IsAgyAcpServerProcessName("language_server.exe"));
+
+    // 兼容规则只放行 PyInstaller 主体与 localharness 引擎，工具子进程保持 filtered 行为。
+    assert(IsAcpServerChainChildName("agy_acp_server.exe"));
+    assert(IsAcpServerChainChildName("localharness_external.exe"));
+    assert(IsAcpServerChainChildName("LocalHarness_External.EXE"));
+    assert(!IsAcpServerChainChildName("powershell.exe"));
+    assert(!IsAcpServerChainChildName("git.exe"));
+    assert(!IsAcpServerChainChildName("node.exe"));
+
+    // 回归：带空格路径下的 ACP 服务端也能正确提取进程名。
+    assert(GetCreateProcessTargetBaseNameA(
+               nullptr,
+               "\"C:\\Users\\test\\AppData\\Local\\JetBrains\\acp agents\\antigravity-acp\\1.5.0\\agy_acp_server.exe\"") ==
+           "agy_acp_server.exe");
+    assert(GetCreateProcessTargetBaseNameA(
+               nullptr,
+               "C:\\Users\\test\\AppData\\Local\\Temp\\_MEI12345\\localharness_external.exe --uid=") ==
+           "localharness_external.exe");
+
     return 0;
 }
