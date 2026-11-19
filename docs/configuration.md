@@ -148,6 +148,28 @@
 - `auto + socks5` 的有效策略为 proxy；`auto + http` 按 `udp_fallback` 决定 block/direct。
 - 显式 `udp_mode=block` 会阻断大部分 UDP，但仍放行 loopback 与 UDP/53。
 
+### Antigravity 远程控制（Remote Control）注意事项
+
+Antigravity 桌面版的「远程控制（Remote Control）」除 `443` 端口的信令通道（`jetski-webchannel.googleapis.com`）外，还会通过 WebRTC STUN/TURN（默认端口 `3478` / `19302` 等）建立数据中继。
+
+使用默认配置（`allowed_ports: [80, 443]`）时，日志会出现 `ConnectEx 端口 3478 不在白名单, 直连`，导致远端设备显示 `offline`。此外，部分环境下 Go WebRTC 绑定局域网网卡 IP 的 UDP socket 连接本地 SOCKS5 UDP relay 时可能触发 `WSA错误码=10049` 或 IPv6 `v6-only` (`WSA错误码=10022`)，引起周期性断连。
+
+推荐配置（强制走稳定的 TCP TURN 中继，修改后需重启 Antigravity）：
+
+```json
+{
+  "proxy_rules": {
+    "allowed_ports": [],
+    "ipv6_mode": "block",
+    "udp_mode": "block"
+  }
+}
+```
+
+说明：
+- 将 `allowed_ports` 设为空数组 `[]`（或至少加入 `3478`）以放行 TURN 端口；默认启用的 `use_default_private: true` 仍会保持 `127.0.0.1` 与局域网直连。
+- 将 `ipv6_mode` 与 `udp_mode` 设为 `block` 可规避上述 `WSA=10022` / `WSA=10049` 导致的反复重连，使远程控制稳定在线。
+
 ## 进阶：强制代理其他程序
 
 本项目首先为 Antigravity 服务，但底层是通用的进程级强制代理，也可以用于其他不走系统代理的 Windows 程序。
