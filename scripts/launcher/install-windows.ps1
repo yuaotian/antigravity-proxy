@@ -105,6 +105,7 @@ $M = @{
         ShortcutDescription     = "Antigravity (含代理自动恢复启动器)"
         MigratingLegacyShortcut = "检测到旧版启动器快捷方式，正在迁移至独立入口..."
         PreservingOfficialShortcut = "已保留官方原生入口，并创建独立代理恢复入口: {0}"
+        InheritedShortcutArguments = "已继承快捷方式启动参数: {0}"
         RemovingProxyShortcuts  = "正在清理代理快捷方式（不影响官方快捷方式）..."
         UpdateNotice            = "💡 注意：官方客户端更新并自动重启时暂未恢复，退出后从「Antigravity (代理)」重新打开即可自动恢复代理！"
     }
@@ -169,6 +170,7 @@ $M = @{
         ShortcutDescription     = "Antigravity (with proxy auto-healing launcher)"
         MigratingLegacyShortcut = "Detected legacy launcher shortcut, migrating to dedicated entry..."
         PreservingOfficialShortcut = "Preserved official native entry intact, created dedicated proxy entry: {0}"
+        InheritedShortcutArguments = "Inherited shortcut launch arguments: {0}"
         RemovingProxyShortcuts  = "Cleaning up proxy shortcuts (official shortcuts are unaffected)..."
         UpdateNotice            = "💡 Note: When the official updater auto-restarts the app, close it and relaunch via 'Antigravity (Proxy)' to restore the proxy!"
     }
@@ -233,6 +235,7 @@ $M = @{
         ShortcutDescription     = "Antigravity (с автовосстановлением прокси)"
         MigratingLegacyShortcut = "Обнаружен старый ярлык лаунчера, перенос на отдельный вход..."
         PreservingOfficialShortcut = "Официальный ярлык сохранен, создан отдельный вход для прокси: {0}"
+        InheritedShortcutArguments = "Унаследованы параметры запуска ярлыка: {0}"
         RemovingProxyShortcuts  = "Удаление ярлыков прокси (официальные ярлыки не затрагиваются)..."
         UpdateNotice            = "💡 Внимание: При автоперезапуске после обновления закройте программу и запустите ее снова через «Antigravity (Прокси)»!"
     }
@@ -809,7 +812,49 @@ function Sync-CliPatchFiles([string]$TargetAgyDir) {
     return $true
 }
 
-function New-LauncherShortcut([string]$ShortcutPath, [string]$TargetExe, [string]$WorkingDir, [string]$IconSourceExe, [string]$Description = "") {
+# 读取快捷方式的目标与启动参数；文件不存在或读取失败时返回 $null（Issue #168）
+function Read-ShortcutInfo([string]$LnkPath) {
+    if ([string]::IsNullOrWhiteSpace($LnkPath) -or -not (Test-Path -LiteralPath $LnkPath)) { return $null }
+    try {
+        $wsh = New-Object -ComObject WScript.Shell
+        $sc = $wsh.CreateShortcut($LnkPath)
+        $info = @{ TargetPath = [string]$sc.TargetPath; Arguments = [string]$sc.Arguments }
+        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($sc) | Out-Null
+        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($wsh) | Out-Null
+        return $info
+    } catch {
+        return $null
+    }
+}
+
+# 决定代理快捷方式需要写入的启动参数（Issue #168），返回空串表示无需写入：
+#   1) 目标代理快捷方式已有参数：返回空串，CreateShortcut 会加载并保留原值；
+#   2) 即将被迁移删除的旧版/其他语言代理快捷方式有参数：继承；
+#   3) 同目录官方 Antigravity.lnk 直接指向主程序且带参数：继承。
+# 不做参数合并/去重：用户自定义优先，避免引号解析出错（YAGNI）。
+# 必须在迁移循环删除旧快捷方式之前调用。
+function Resolve-LauncherShortcutArguments([string]$Dir, [string]$TargetLnkPath, [string]$LauncherPath) {
+    $current = Read-ShortcutInfo $TargetLnkPath
+    if ($current -and -not [string]::IsNullOrWhiteSpace($current.Arguments)) { return "" }
+
+    foreach ($known in $Global:AllKnownShortcutNames) {
+        $legacyPath = Join-Path $Dir $known
+        if ($legacyPath -eq $TargetLnkPath) { continue }
+        if (-not (Test-IsLauncherShortcut -LnkPath $legacyPath -ExpectedLauncherPath $LauncherPath)) { continue }
+        $legacy = Read-ShortcutInfo $legacyPath
+        if ($legacy -and -not [string]::IsNullOrWhiteSpace($legacy.Arguments)) { return $legacy.Arguments }
+    }
+
+    $official = Read-ShortcutInfo (Join-Path $Dir "Antigravity.lnk")
+    if ($official -and -not [string]::IsNullOrWhiteSpace($official.Arguments)) {
+        # 仅当官方快捷方式直接指向主程序时才继承，防止把更新器（如 Update.exe --processStart）的参数误传给主程序
+        $leaf = [System.IO.Path]::GetFileName($official.TargetPath)
+        if ($Script:AppExeNames -contains $leaf) { return $official.Arguments }
+    }
+    return ""
+}
+
+function New-LauncherShortcut([string]$ShortcutPath, [string]$TargetExe, [string]$WorkingDir, [string]$IconSourceExe, [string]$Description = "", [string]$Arguments = "") {
     $parentDir = Split-Path -Parent $ShortcutPath
     if (-not (Test-Path $parentDir)) {
         New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
@@ -818,6 +863,11 @@ function New-LauncherShortcut([string]$ShortcutPath, [string]$TargetExe, [string
     $shortcut = $wsh.CreateShortcut($ShortcutPath)
     $shortcut.TargetPath = $TargetExe
     $shortcut.WorkingDirectory = $WorkingDir
+    # 仅在需要继承时写入启动参数；为空时保留 CreateShortcut 从已有 .lnk 加载的原参数（Issue #168）
+    if (-not [string]::IsNullOrWhiteSpace($Arguments)) {
+        $shortcut.Arguments = $Arguments
+        Write-Host "   $([string]::Format((T 'InheritedShortcutArguments'), $Arguments))" -ForegroundColor Gray
+    }
     if (-not [string]::IsNullOrWhiteSpace($Description)) {
         $shortcut.Description = $Description
     } else {
@@ -836,6 +886,8 @@ function Install-DesktopShortcut([string]$LauncherPath, [string]$TargetAppDir) {
     $targetLnkName = (T "ShortcutName")
     $targetLnkPath = Join-Path $desktop $targetLnkName
     $origExe = Get-AntigravityExePath $TargetAppDir
+    # 迁移删除旧快捷方式前先确定要继承的启动参数（Issue #168）
+    $shortcutArgs = Resolve-LauncherShortcutArguments -Dir $desktop -TargetLnkPath $targetLnkPath -LauncherPath $LauncherPath
 
     # 清理所有历史旧版本或不同语系的代理启动器快捷方式，同时严禁删除官方原生快捷方式
     foreach ($known in $Global:AllKnownShortcutNames) {
@@ -850,7 +902,7 @@ function Install-DesktopShortcut([string]$LauncherPath, [string]$TargetAppDir) {
         }
     }
 
-    New-LauncherShortcut -ShortcutPath $targetLnkPath -TargetExe $LauncherPath -WorkingDir $RootDir -IconSourceExe $origExe -Description (T "ShortcutDescription")
+    New-LauncherShortcut -ShortcutPath $targetLnkPath -TargetExe $LauncherPath -WorkingDir $RootDir -IconSourceExe $origExe -Description (T "ShortcutDescription") -Arguments $shortcutArgs
     Write-Ok "Desktop Shortcut: $targetLnkPath"
 }
 
@@ -859,6 +911,8 @@ function Install-StartMenuShortcut([string]$LauncherPath, [string]$TargetAppDir)
     $targetLnkName = (T "ShortcutName")
     $targetLnkPath = Join-Path $programs $targetLnkName
     $origExe = Get-AntigravityExePath $TargetAppDir
+    # 迁移删除旧快捷方式前先确定要继承的启动参数（Issue #168）
+    $shortcutArgs = Resolve-LauncherShortcutArguments -Dir $programs -TargetLnkPath $targetLnkPath -LauncherPath $LauncherPath
 
     # 清理所有历史旧版本或不同语系的代理启动器快捷方式，同时严禁删除官方原生快捷方式
     foreach ($known in $Global:AllKnownShortcutNames) {
@@ -873,7 +927,7 @@ function Install-StartMenuShortcut([string]$LauncherPath, [string]$TargetAppDir)
         }
     }
 
-    New-LauncherShortcut -ShortcutPath $targetLnkPath -TargetExe $LauncherPath -WorkingDir $RootDir -IconSourceExe $origExe -Description (T "ShortcutDescription")
+    New-LauncherShortcut -ShortcutPath $targetLnkPath -TargetExe $LauncherPath -WorkingDir $RootDir -IconSourceExe $origExe -Description (T "ShortcutDescription") -Arguments $shortcutArgs
     Write-Ok "Start Menu Shortcut: $targetLnkPath"
 }
 
@@ -884,7 +938,9 @@ function Install-TaskbarPin([string]$LauncherPath, [string]$TargetAppDir) {
     $targetLnkName = (T "ShortcutName")
     if (Test-Path $tbDir) {
         $tbLnk = Join-Path $tbDir $targetLnkName
-        New-LauncherShortcut -ShortcutPath $tbLnk -TargetExe $LauncherPath -WorkingDir $RootDir -IconSourceExe $origExe -Description (T "ShortcutDescription")
+        # 任务栏入口同样继承启动参数（Issue #168）
+        $shortcutArgs = Resolve-LauncherShortcutArguments -Dir $tbDir -TargetLnkPath $tbLnk -LauncherPath $LauncherPath
+        New-LauncherShortcut -ShortcutPath $tbLnk -TargetExe $LauncherPath -WorkingDir $RootDir -IconSourceExe $origExe -Description (T "ShortcutDescription") -Arguments $shortcutArgs
     }
     Write-Ok "Launcher executable ready for Taskbar pin."
     Write-Host "   $((T 'TaskbarNotice'))" -ForegroundColor Yellow
