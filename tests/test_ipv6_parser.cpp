@@ -50,6 +50,19 @@ int main() {
     assert(!Core::ProxyRules::ParseIPv6("2001:::1", &out));
     assert(!Core::ProxyRules::ParseIPv6("gggg::1", &out));
 
+    // Issue #169：内置 default-private 规则同时作用于 UDP（局域网 UDP 直连；udp_mode=block 时据此放行）
+    {
+        Core::ProxyRules rules;
+        rules.CompileRoutingRules();
+        std::string action;
+        assert(rules.MatchRouting("", "192.168.1.5", false, 3478, "udp", &action, nullptr) && action == "direct");
+        assert(rules.MatchRouting("", "fe80::1", true, 50000, "udp", &action, nullptr) && action == "direct");
+        // TCP 行为保持不变
+        assert(rules.MatchRouting("", "10.0.0.8", false, 443, "tcp", &action, nullptr) && action == "direct");
+        // 公网地址不命中内置规则：block 模式下仍被阻断
+        assert(!rules.MatchRouting("", "74.125.247.128", false, 3478, "udp", &action, nullptr));
+    }
+
     return 0;
 }
 

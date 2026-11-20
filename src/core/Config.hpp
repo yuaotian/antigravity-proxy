@@ -456,7 +456,9 @@ namespace Core {
                 def.ip_cidrs_v6 = {
                     "fc00::/7", "fe80::/10", "::1/128"
                 };
-                def.protocols = {"tcp"};
+                // Issue #169：内网直连同时覆盖 UDP，局域网 UDP（如 WebRTC P2P）不再送入 SOCKS5 relay，
+                // udp_mode=block 时也据此放行（见 Hooks.cpp IsUdpBlockExempt），与 TCP 及配置页“内网直连”语义一致
+                def.protocols = {"tcp", "udp"};
                 srcRules.insert(srcRules.begin(), def);
             }
 

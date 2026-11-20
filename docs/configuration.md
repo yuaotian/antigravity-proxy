@@ -65,7 +65,7 @@
 | `proxy_rules.routing.enabled` | bool | `true` | 是否启用规则路由 |
 | `proxy_rules.routing.priority_mode` | string | `"order"` | 规则优先级: `order`(按顺序) / `number`(priority) |
 | `proxy_rules.routing.default_action` | string | `"proxy"` | 未命中时默认动作 |
-| `proxy_rules.routing.use_default_private` | bool | `true` | 自动加载 RFC1918/loopback 内网直连规则 |
+| `proxy_rules.routing.use_default_private` | bool | `true` | 自动加载 RFC1918/loopback 内网直连规则（同时作用于 TCP 与 UDP） |
 | `proxy_rules.routing.rules` | array | `[]` | 规则列表（支持 CIDR/域名通配符/端口/协议） |
 
 ### 规则路由 / Routing Rules
@@ -146,7 +146,30 @@
 说明：
 - `dns_mode="direct"` 仍会放行 UDP/53（避免 DNS 超时）；若你希望 DNS 也走代理，请改为 `dns_mode="proxy"`。
 - `auto + socks5` 的有效策略为 proxy；`auto + http` 按 `udp_fallback` 决定 block/direct。
-- 显式 `udp_mode=block` 会阻断大部分 UDP，但仍放行 loopback 与 UDP/53。
+- 显式 `udp_mode=block` 会阻断大部分 UDP，但仍放行 loopback、UDP/53，以及命中 `direct` 路由规则的目标（默认 `use_default_private: true` 已包含局域网/保留网段，局域网 P2P UDP 不受影响）。
+
+### Antigravity 远程控制（Remote Control）注意事项
+
+Antigravity 桌面版的「远程控制（Remote Control）」除 `443` 端口的信令通道（`jetski-webchannel.googleapis.com`）外，还会通过 WebRTC STUN/TURN（如端口 `3478`）建立数据中继。
+
+使用默认配置（`allowed_ports: [80, 443]`）时，日志会出现 `ConnectEx 端口 3478 不在白名单, 直连`，导致远端设备显示 `offline`。此外，部分环境下 WebRTC 组件可能把 UDP socket 绑定到局域网网卡 IP，此时连接本机 SOCKS5 UDP relay 会失败（日志 `connect relay 失败 ... WSA错误码=10049`，新版本会同时打印 `local=` 本地绑定地址便于确认）；IPv6 socket 若被应用设为 v6-only，也无法连接 IPv4 代理（`WSA错误码=10022`）。两者都可能引起周期性断连。
+
+推荐配置（让远程控制走稳定的 TCP TURN 中继，修改后需重启 Antigravity）：
+
+```json
+{
+  "proxy_rules": {
+    "allowed_ports": [80, 443, 3478],
+    "ipv6_mode": "block",
+    "udp_mode": "block"
+  }
+}
+```
+
+说明：
+- `allowed_ports` 加入 `3478` 即可放行 TURN 端口；若仍不稳定，可改为空数组 `[]`（所有端口都走代理，影响面更大）。
+- `ipv6_mode` 与 `udp_mode` 设为 `block` 可规避上述 `WSA=10022` / `WSA=10049` 导致的反复重连；Antigravity 的 IPv6 连接会被阻止并回退到 IPv4。
+- 默认启用的 `use_default_private: true` 会保持 `127.0.0.1` 与局域网直连（TCP 与 UDP 均适用），因此 `udp_mode=block` 不会阻断局域网 P2P。注意：v2.6.4 及更早版本的 `udp_mode=block` 会连局域网 UDP 一起阻断，此时远程控制只能经 TURN 中继。
 
 ## 进阶：强制代理其他程序
 

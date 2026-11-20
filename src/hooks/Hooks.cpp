@@ -1114,6 +1114,21 @@ static bool ShouldLogUdpProxyFail() {
     return Core::Logger::IsEnabled(Core::LogLevel::Debug);
 }
 
+// UDP 有效策略为 block 时的放行例外（Issue #169）：
+// loopback、UDP/53，以及命中 direct 路由规则的目标（含 use_default_private 内置的局域网/保留网段）。
+// 意图：block 只阻止 UDP 走公网，局域网 P2P（如 WebRTC host 候选）应与 TCP 一样直连。
+// 仅“命中规则且动作为 direct”才放行；未命中时的 default_action 不参与，避免 default_action=direct 让 block 失效。
+static bool IsUdpBlockExempt(const Core::Config& config, const sockaddr* dst, bool hasPort, uint16_t dstPort) {
+    if (!dst) return false;
+    if (IsSockaddrLoopback(dst) || (hasPort && dstPort == 53)) return true;
+
+    std::string ip;
+    bool isV6 = false;
+    if (!SockaddrToIp(dst, &ip, &isV6)) return false;
+    std::string action;
+    return config.rules.MatchRouting("", ip, isV6, dstPort, "udp", &action, nullptr) && action == "direct";
+}
+
 // connect/ConnectEx 属于高频热路径，路由日志默认做限流，避免 Info 级别大量刷盘
 static bool ShouldLogRouteDecisionInfo() {
     static std::atomic<int> s_routeCount{0};
@@ -1674,8 +1689,23 @@ static bool EnsureUdpProxyReady(
         const int err = WSAGetLastError();
         // 并发场景下可能已被其它线程先 connect，WSAEISCONN 视为成功
         if (err != WSAEISCONN) {
-            Core::Logger::Error("UDP 代理: connect relay 失败, sock=" + std::to_string((unsigned long long)udpSock) +
-                                ", WSA错误码=" + std::to_string(err));
+            // Issue #169：失败会随每个 UDP 包重复出现，改为限流输出；
+            // 同时打印 socket 本地绑定地址与 relay 地址，用于确认“已绑定到网卡 IP 的 socket 无法连接本机 relay”（10049）
+            if (ShouldLogUdpProxyFail()) {
+                sockaddr_storage local{};
+                int localLen = (int)sizeof(local);
+                const std::string localStr = (getsockname(udpSock, (sockaddr*)&local, &localLen) == 0)
+                    ? SockaddrToString((sockaddr*)&local) : std::string();
+                const std::string relayStr = SockaddrToString((sockaddr*)&relayForSock);
+                Core::Logger::Error("UDP 代理: connect relay 失败, sock=" + std::to_string((unsigned long long)udpSock) +
+                                    ", local=" + (localStr.empty() ? std::string("(未知)") : localStr) +
+                                    ", relay=" + (relayStr.empty() ? std::string("(未知)") : relayStr) +
+                                    ", WSA错误码=" + std::to_string(err) +
+                                    (err == WSAEADDRNOTAVAIL
+                                         ? "（socket 可能已绑定到非回环网卡地址，无法连接本机 relay；将按 udp_fallback=" +
+                                               config.rules.udp_fallback + " 处理）"
+                                         : std::string()));
+            }
             WSASetLastError(err);
             return false;
         }
@@ -2529,7 +2559,8 @@ int PerformProxyConnect(SOCKET s, const struct sockaddr* name, int namelen, bool
                 if (udpAction == Core::UdpAction::Block) {
                     uint16_t dstPort = 0;
                     const bool hasPort = TryGetSockaddrPort(name, &dstPort);
-                    const bool allowUdp = IsSockaddrLoopback(name) || (hasPort && dstPort == 53);
+                    // 例外判断统一收敛到 IsUdpBlockExempt（loopback / UDP53 / 局域网等 direct 路由规则）
+                    const bool allowUdp = IsUdpBlockExempt(config, name, hasPort, dstPort);
                     if (!allowUdp) {
                         const int err = WSAEACCES;
                         if (ShouldLogUdpBlock()) {
@@ -3374,7 +3405,8 @@ BOOL PASCAL DetourConnectEx(
                 if (udpAction == Core::UdpAction::Block) {
                     uint16_t dstPort = 0;
                     const bool hasPort = TryGetSockaddrPort(name, &dstPort);
-                    const bool allowUdp = IsSockaddrLoopback(name) || (hasPort && dstPort == 53);
+                    // 例外判断统一收敛到 IsUdpBlockExempt（loopback / UDP53 / 局域网等 direct 路由规则）
+                    const bool allowUdp = IsUdpBlockExempt(config, name, hasPort, dstPort);
                     if (!allowUdp) {
                         const int err = WSAEACCES;
                         if (ShouldLogUdpBlock()) {
@@ -4546,7 +4578,8 @@ int WSAAPI DetourSendTo(SOCKET s, const char* buf, int len, int flags, const str
             if (udpAction == Core::UdpAction::Block) {
                 uint16_t dstPort = 0;
                 const bool hasPort = TryGetSockaddrPort(dst, &dstPort);
-                const bool allowUdp = dst && (IsSockaddrLoopback(dst) || (hasPort && dstPort == 53));
+                // 例外判断统一收敛到 IsUdpBlockExempt（loopback / UDP53 / 局域网等 direct 路由规则）
+                const bool allowUdp = IsUdpBlockExempt(config, dst, hasPort, dstPort);
                 if (!allowUdp) {
                     const int err = WSAEACCES;
                     if (ShouldLogUdpBlock()) {
@@ -4676,7 +4709,8 @@ int WSAAPI DetourWSASendTo(
             if (udpAction == Core::UdpAction::Block) {
                 uint16_t dstPort = 0;
                 const bool hasPort = TryGetSockaddrPort(dst, &dstPort);
-                const bool allowUdp = dst && (IsSockaddrLoopback(dst) || (hasPort && dstPort == 53));
+                // 例外判断统一收敛到 IsUdpBlockExempt（loopback / UDP53 / 局域网等 direct 路由规则）
+                const bool allowUdp = IsUdpBlockExempt(config, dst, hasPort, dstPort);
                 if (!allowUdp) {
                     const int err = WSAEACCES;
                     if (lpNumberOfBytesSent) {
