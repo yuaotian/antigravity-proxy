@@ -544,8 +544,13 @@
     const anti = result.antigravity || {};
     const antiKind = anti.state === "blocked" ? "err" : anti.state === "ok" ? "ok" : "warn";
     setDot(refs["gemdot-anti"], antiKind);
-    setText(refs["gemval-anti"], anti.state === "blocked" ? T("side2.geminiAntiBlocked")
+    // 被拒时区分来源：agy 登录日志给出的是"账号资格被拒"（可能附带 Google 检测地区），其余沿用 403/1008 文案
+    setText(refs["gemval-anti"], anti.state === "blocked"
+        ? (anti.detectedLocation ? T("side2.geminiAntiIneligibleLoc", { loc: anti.detectedLocation })
+          : anti.source === "agy" ? T("side2.geminiAntiIneligible")
+          : T("side2.geminiAntiBlocked"))
       : anti.state === "ok" ? (anti.loggedIn ? T("side2.geminiAntiLoggedIn") : T("side2.geminiAntiOk"))
+      : anti.state === "signed-out" ? T("side2.geminiAntiSignedOut")
       : anti.state === "unknown" ? T("side2.geminiAntiNoLog")
       : T("side2.geminiAntiUnknown"));
 
@@ -554,7 +559,23 @@
 
     if (logEl) {
       const evidence = result.logEvidence || {};
-      if (evidence.matched) {
+      const agy = result.agyEvidence || {};
+      if (anti.source === "agy") {
+        // agy 登录日志是权威来源：展示它的最后一个认证事件（悬浮可看文件与原始行）
+        logEl.hidden = false;
+        const time = formatEventTime(agy.at);
+        if (agy.state === "blocked") {
+          logEl.className = "hint err";
+          logEl.textContent = T("side2.geminiAgyBlocked", { time });
+        } else if (agy.state === "signed-in") {
+          logEl.className = "hint ok";
+          logEl.textContent = T("side2.geminiAgySignedIn", { time });
+        } else {
+          logEl.className = "hint warn";
+          logEl.textContent = T("side2.geminiAgySignedOut", { time });
+        }
+        logEl.title = `${agy.path}\n${agy.line}`;
+      } else if (evidence.matched) {
         logEl.hidden = false;
         logEl.className = "hint err";
         logEl.textContent = T("side2.geminiLogMatched", { time: formatTime(evidence.mtimeMs) });
@@ -718,6 +739,15 @@
     const d = new Date(ms);
     const p = (n) => String(n).padStart(2, "0");
     return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  }
+
+  /** 日志证据时间：当天只显示时分秒，跨天补上"月-日"，避免把几天前的旧事件看成刚刚发生 */
+  function formatEventTime(ms) {
+    if (!ms) return "—";
+    const d = new Date(ms);
+    const p = (n) => String(n).padStart(2, "0");
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return `${sameDay ? "" : `${p(d.getMonth() + 1)}-${p(d.getDate())} `}${formatTime(ms)}`;
   }
 
   // ============================================================

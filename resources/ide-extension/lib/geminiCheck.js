@@ -14,10 +14,15 @@
  * 因此结论拆成三层，UI 必须分开展示，不能用一个对勾概括：
  *   network        —— 经代理能否到达 Google（gstatic 204）
  *   geminiApi      —— Gemini API 的区域闸门（用无效 key 探测，错误信息可区分"地区不支持"与"key 无效"）
- *   antigravity    —— loadCodeAssist 的 403/1008 证据 + Antigravity 自己的 ls-main.log 命中记录
+ *   antigravity    —— 账号能否真正登录/使用 Antigravity：
+ *                     ① 优先读 agy（IDE 2.6+ 后端）自己的登录日志 ~/.gemini/antigravity/log/cli-*.log，
+ *                        它记录了 Google 对「这个账号」的资格判定（failure_kind=ineligible / valid=true）；
+ *                     ② 没有 agy 日志时（旧版 IDE）才回退到 IDE 日志目录里的 location 命中 / 登录标记。
  *
- * 最后一条是"真实会话"的硬证据：日志里出现过 location 限制，说明当时确实被服务端拒绝；
- * 但它可能来自旧会话，所以 UI 同时展示命中时间，避免把历史问题当成当前故障。
+ * 顶部总结论必须"两层都确认可用"才显示可用：匿名 API 放行 ≠ 账号能登录 Antigravity
+ * （2026-11-21 实测：Gemini API 探测放行，但 agy 登录被 Google 以 ineligible 拒绝）。
+ *
+ * 日志证据可能来自旧会话，所以 UI 同时展示命中时间，避免把历史问题当成当前故障。
  */
 
 const fs = require("fs");
@@ -66,6 +71,36 @@ const SESSION_LOGIN_MARKERS = Object.freeze([
   /Access token (?:updated|refreshed)/i,
   /Synced .+ to legacy key/i,
 ]);
+
+/** agy 登录日志：~/.gemini/antigravity/log/cli-YYYYMMDD_HHMMSS.log（多个 agy 实例各写一个文件） */
+const AGY_LOG_FILE_RE = /^cli-(\d{4})(\d{2})\d{2}_\d{6}\.log$/i;
+/** 只看最近几个 agy 日志文件：足以覆盖"上一次登录成功"到"现在"，又不会每次扫上百个历史文件 */
+const AGY_LOG_MAX_FILES = 6;
+/** glog 行首时间戳：I1121 14:31:38.583275（无年份，年份取自文件名） */
+const GLOG_TIME_RE = /^[IWEF](\d{2})(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?/;
+/**
+ * agy 对"账号资格被拒"的结论（认证级标记，2026-11-21 实测）：
+ * - [auth-login] ... failure_kind=ineligible ... outcome=error
+ * - [auth-status] ... reason=ineligible rpc=get_auth_status valid=false
+ * 注意：刻意不使用 LOCATION_NOT_ELIGIBLE / error_number 1008。它们来自 "AICode FetchConfig failed"，
+ * 这是实验配置拉取接口，在登录正常、可用的会话里也会每分钟出现一次（11-13～11-20 的日志均如此），
+ * 当作"被拒"会把正常会话误报为受限。
+ */
+const AGY_INELIGIBLE_MARKERS = Object.freeze([
+  /failure_kind=ineligible\b/i,
+  /\breason=ineligible\b/i,
+]);
+/** agy 确认登录有效：[auth-status] rpc=get_auth_status valid=true（has_token=true 不算，令牌存在也可能资格被拒） */
+const AGY_SIGNED_IN_MARKERS = Object.freeze([
+  /rpc=get_auth_status valid=true\b/i,
+]);
+/** agy 未登录：没有令牌 / 明确提示未登录 */
+const AGY_SIGNED_OUT_MARKERS = Object.freeze([
+  /has_token=false\b/i,
+  /You are not logged into Antigravity/i,
+]);
+/** Google 在错误响应里给出的检测地区（Detected location: CN / "detected_location": "CN"），仅作为附加诊断信息 */
+const DETECTED_LOCATION_RE = /Detected location:\s*([A-Z]{2})\b|detected_location\W{0,8}([A-Z]{2})\b/;
 
 const DEFAULT_T = I18n.createT("zh-cn");
 
@@ -266,6 +301,174 @@ function findAntigravityLogEvidence(opts = {}) {
 }
 
 /**
+ * 解析 glog 行首时间戳为本地时间毫秒；不是 glog 行返回 0。
+ * glog 不带年份：取文件名里的年份，事件月份小于文件月份时视为跨年（12 月的会话写到 1 月）。
+ * @param {string} line
+ * @param {number} year 文件名中的年份
+ * @param {number} fileMonth 文件名中的月份（1-12）
+ */
+function parseGlogTime(line, year, fileMonth) {
+  const m = GLOG_TIME_RE.exec(line);
+  if (!m) return 0;
+  const month = Number(m[1]);
+  const y = month < fileMonth ? year + 1 : year;
+  const ms = Math.floor(Number((m[6] || "0").padEnd(6, "0")) / 1000);
+  return new Date(y, month - 1, Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]), ms).getTime();
+}
+
+/** @param {string} line @returns {"blocked" | "signed-in" | "signed-out" | ""} */
+function classifyAgyLine(line) {
+  if (matchesAny(AGY_INELIGIBLE_MARKERS, line)) return "blocked";
+  if (matchesAny(AGY_SIGNED_IN_MARKERS, line)) return "signed-in";
+  if (matchesAny(AGY_SIGNED_OUT_MARKERS, line)) return "signed-out";
+  return "";
+}
+
+/**
+ * 读取 agy（~/.gemini/bin/agy.exe，IDE 2.6+ 后端）自己的登录日志，给出"账号能否登录 Antigravity"的结论。
+ *
+ * 为什么以它为准：登录是否成功、Google 是否判定账号不符合资格，只有 agy 自己知道；
+ * 第三方扩展（如 Antigravity Cockpit）有独立的 OAuth 账号，它的日志不能代表 IDE 的登录状态。
+ *
+ * 判定规则（多个 agy 实例的日志按事件时间合并后）：
+ * - 最近一次"资格被拒"不早于最近一次"登录有效" → blocked
+ *   （被拒之后出现的大量"未登录"不会覆盖它：被拒本来就意味着登不进去）
+ * - 否则最近一次"登录有效"不早于最近一次"未登录" → signed-in
+ * - 否则出现过"未登录" → signed-out
+ * - 一个认证事件都没有 → none（由调用方回退到旧的 IDE 日志逻辑）
+ *
+ * @param {{ homeDir?: string, maxBytes?: number }} [opts]
+ * @returns {{
+ *   available: boolean, state: "blocked" | "signed-in" | "signed-out" | "none",
+ *   at: number, path: string, line: string, detectedLocation: string, filesScanned: number
+ * }}
+ */
+function findAgyAuthEvidence(opts = {}) {
+  const homeDir = opts.homeDir || os.homedir();
+  const maxBytes = opts.maxBytes ?? DEFAULT_LOG_MAX_BYTES;
+  const dir = path.join(homeDir, ".gemini", "antigravity", "log");
+  /** @type {ReturnType<typeof findAgyAuthEvidence>} */
+  const none = { available: false, state: "none", at: 0, path: "", line: "", detectedLocation: "", filesScanned: 0 };
+
+  /** @type {string[]} */
+  let names = [];
+  try {
+    names = fs.readdirSync(dir).filter((n) => AGY_LOG_FILE_RE.test(n));
+  } catch {
+    return none;
+  }
+  const files = names
+    .map((name) => {
+      const p = path.join(dir, name);
+      try { return { name, path: p, mtimeMs: fs.statSync(p).mtimeMs }; } catch { return null; }
+    })
+    .filter((f) => f !== null)
+    .sort((a, b) => /** @type {any} */ (b).mtimeMs - /** @type {any} */ (a).mtimeMs)
+    .slice(0, AGY_LOG_MAX_FILES);
+
+  /** @type {{ kind: string, at: number, line: string, path: string, location: string }[]} */
+  const events = [];
+  let available = false;
+  for (const f of /** @type {{ name: string, path: string, mtimeMs: number }[]} */ (files)) {
+    let text = "";
+    try {
+      text = readTailText(f.path, maxBytes);
+    } catch {
+      continue;
+    }
+    available = true;
+    const nm = AGY_LOG_FILE_RE.exec(f.name);
+    const year = nm ? Number(nm[1]) : new Date(f.mtimeMs).getFullYear();
+    const fileMonth = nm ? Number(nm[2]) : 1;
+    for (const raw of text.split(/\r?\n/)) {
+      const kind = classifyAgyLine(raw);
+      const loc = DETECTED_LOCATION_RE.exec(raw);
+      if (!kind && !loc) continue;
+      const at = parseGlogTime(raw, year, fileMonth);
+      if (!at) continue;
+      events.push({ kind, at, line: raw.trim().slice(0, 500), path: f.path, location: loc ? (loc[1] || loc[2] || "") : "" });
+    }
+  }
+  if (!available) return none;
+
+  // 稳定排序：同一时间戳保持文件内原有顺序
+  events.sort((a, b) => a.at - b.at);
+  /** @type {Record<string, { at: number, line: string, path: string } | null>} */
+  const last = { blocked: null, "signed-in": null, "signed-out": null };
+  // 只保留"最近一次登录有效之后"的检测地区：登录成功前的旧地区信息与当前故障无关
+  let detectedLocation = "";
+  for (const e of events) {
+    if (e.kind) last[e.kind] = { at: e.at, line: e.line, path: e.path };
+    if (e.kind === "signed-in") detectedLocation = "";
+    if (e.location) detectedLocation = e.location;
+  }
+
+  const { blocked, "signed-in": signedIn, "signed-out": signedOut } = last;
+  /** @type {"blocked" | "signed-in" | "signed-out" | "none"} */
+  let state = "none";
+  /** @type {{ at: number, line: string, path: string } | null} */
+  let pick = null;
+  if (blocked && (!signedIn || blocked.at >= signedIn.at)) { state = "blocked"; pick = blocked; }
+  else if (signedIn && (!signedOut || signedIn.at >= signedOut.at)) { state = "signed-in"; pick = signedIn; }
+  else if (signedOut) { state = "signed-out"; pick = signedOut; }
+
+  return {
+    available,
+    state,
+    at: pick ? pick.at : 0,
+    path: pick ? pick.path : "",
+    line: pick ? pick.line : "",
+    // 检测地区只在"被拒"时有诊断意义；正常会话里 FetchConfig 也会返回地区，展示出来反而误导
+    detectedLocation: state === "blocked" ? detectedLocation : "",
+    filesScanned: files.length,
+  };
+}
+
+/**
+ * Antigravity 会话层结论（纯函数）。
+ * 优先级：匿名 loadCodeAssist 明确命中地区错误 > agy 登录日志 > 旧版 IDE 日志（Cockpit 等标记）兜底。
+ * @param {{
+ *   lcaVerdict: { state: string },
+ *   agy: ReturnType<typeof findAgyAuthEvidence>,
+ *   logEvidence: ReturnType<typeof findAntigravityLogEvidence>,
+ * }} input
+ * @returns {{ state: "ok" | "blocked" | "signed-out" | "inconclusive" | "unknown", source: "loadCodeAssist" | "agy" | "ide-log" | "", loggedIn: boolean, detectedLocation: string, at: number }}
+ */
+function resolveAntigravityState({ lcaVerdict, agy, logEvidence }) {
+  const base = { loggedIn: false, detectedLocation: "", at: 0 };
+  if (lcaVerdict.state === "blocked") return { ...base, state: "blocked", source: "loadCodeAssist" };
+
+  // agy 有任何认证事件时以它为准：避免第三方扩展的登录标记把真实的"资格被拒"盖掉
+  if (agy && agy.state !== "none") {
+    const at = agy.at;
+    if (agy.state === "blocked") return { ...base, state: "blocked", source: "agy", detectedLocation: agy.detectedLocation, at };
+    if (agy.state === "signed-in") return { ...base, state: "ok", source: "agy", loggedIn: true, at };
+    return { ...base, state: "signed-out", source: "agy", at };
+  }
+
+  // 旧版 IDE（没有 agy 日志）兜底：沿用原有 IDE 日志目录的判定
+  if (logEvidence.matched) return { ...base, state: "blocked", source: "ide-log", at: logEvidence.mtimeMs };
+  if (logEvidence.loggedIn) return { ...base, state: "ok", source: "ide-log", loggedIn: true, at: logEvidence.loginMtimeMs };
+  if (lcaVerdict.state === "ok") return { ...base, state: "ok", source: "loadCodeAssist" };
+  if (logEvidence.available) return { ...base, state: "inconclusive", source: "ide-log" };
+  return { ...base, state: "unknown", source: "" };
+}
+
+/**
+ * 顶部总结论（纯函数）：任一层被拒即"受限"；只有 API 层与 Antigravity 会话层都确认可用才算"可用"。
+ * @param {{ allFailed: boolean, proxyFailedOnly: boolean, apiState: string, antigravityState: string }} input
+ * @returns {"ok" | "blocked" | "inconclusive" | "error" | "proxy-error"}
+ */
+function resolveOverallState({ allFailed, proxyFailedOnly, apiState, antigravityState }) {
+  if (allFailed) return "error";
+  if (proxyFailedOnly) return "proxy-error";
+  if (apiState === "blocked" || antigravityState === "blocked") return "blocked";
+  // 匿名 API 放行只说明出口 IP 能过 Gemini API 的地区闸门，不代表账号能登录 Antigravity
+  if (apiState === "ok" && antigravityState === "ok") return "ok";
+  return "inconclusive";
+}
+
+/**
  * 单次 HTTP 探测：先代理、失败再直连；两种结果都保留，方便区分"代理坏了"和"目标被拒"。
  * @param {string} url
  * @param {{ proxy?: any, method?: string, body?: string, timeoutMs?: number, headers?: Record<string, string>, t?: (key: string, params?: Record<string, any>) => string }} opts
@@ -298,7 +501,8 @@ async function httpProbe(url, opts) {
 
 /**
  * 执行一次完整检测（三路探测并行 + 本地日志证据）。
- * @param {{ proxy?: any, appDataDir?: string, timeoutMs?: number, t?: (key: string, params?: Record<string, any>) => string, now?: number }} [opts]
+ * homeDir 仅用于定位 agy 登录日志（默认 os.homedir()），测试时可注入临时目录。
+ * @param {{ proxy?: any, appDataDir?: string, homeDir?: string, timeoutMs?: number, t?: (key: string, params?: Record<string, any>) => string, now?: number }} [opts]
  */
 async function checkGemini(opts = {}) {
   const started = Date.now();
@@ -321,34 +525,33 @@ async function checkGemini(opts = {}) {
   const apiVerdict = api.ok ? classifyGeminiApi(api.status, api.text) : { state: "error", reason: api.error || "network" };
   const lcaVerdict = lca.ok ? classifyLoadCodeAssist(lca.status, lca.text) : { state: "error", reason: lca.error || "network" };
   const logEvidence = findAntigravityLogEvidence({ appDataDir: opts.appDataDir, now: opts.now });
-
-  const antigravityBlocked = lcaVerdict.state === "blocked" || logEvidence.matched;
-  /** @type {"ok" | "blocked" | "inconclusive" | "unknown"} */
-  let antigravityState;
-  if (antigravityBlocked) antigravityState = "blocked";
-  else if (logEvidence.loggedIn || lcaVerdict.state === "ok") antigravityState = "ok";
-  else if (logEvidence.available) antigravityState = "inconclusive";
-  else antigravityState = "unknown";
+  // agy 登录日志：账号资格的权威证据（IDE 2.6+）
+  const agyEvidence = findAgyAuthEvidence({ homeDir: opts.homeDir });
+  const anti = resolveAntigravityState({ lcaVerdict, agy: agyEvidence, logEvidence });
 
   const probes = [reach, api, lca];
   const anySuccess = probes.some((p) => p.ok);
   const proxySuccess = probes.some((p) => p.ok && p.via === "proxy");
   const allFailed = probes.every((p) => !p.ok);
 
-  /** @type {"ok" | "blocked" | "inconclusive" | "error" | "proxy-error"} */
-  let state;
-  if (allFailed) state = "error";
-  else if (proxy && !proxySuccess && anySuccess) state = "proxy-error";
-  else if (apiVerdict.state === "blocked" || antigravityBlocked) state = "blocked";
-  else if (apiVerdict.state === "ok") state = "ok";
-  else state = "inconclusive";
+  const state = resolveOverallState({
+    allFailed,
+    proxyFailedOnly: !!proxy && !proxySuccess && anySuccess,
+    apiState: apiVerdict.state,
+    antigravityState: anti.state,
+  });
 
   /** @type {{ code: string, ok: boolean }[]} */
   const reasons = [];
   if (apiVerdict.state === "blocked") reasons.push({ code: "gemini-api-location", ok: false });
   if (lcaVerdict.state === "blocked") reasons.push({ code: "loadcodeassist-location", ok: false });
-  if (logEvidence.matched) reasons.push({ code: "antigravity-log-location", ok: false });
-  if (logEvidence.loggedIn && !antigravityBlocked) reasons.push({ code: "antigravity-session-ok", ok: true });
+  if (anti.source === "agy") {
+    // 记录 agy 的结论来源，便于日志/排查时区分"被拒"与"未登录"
+    reasons.push({ code: `agy-${agyEvidence.state}`, ok: agyEvidence.state === "signed-in" });
+  } else {
+    if (logEvidence.matched) reasons.push({ code: "antigravity-log-location", ok: false });
+    if (logEvidence.loggedIn && anti.state !== "blocked") reasons.push({ code: "antigravity-session-ok", ok: true });
+  }
   if (apiVerdict.reason === "region-ok") reasons.push({ code: "region-ok", ok: true });
 
   return {
@@ -367,7 +570,8 @@ async function checkGemini(opts = {}) {
     },
     geminiApi: { ok: api.ok, via: api.via, status: api.status, state: apiVerdict.state, reason: apiVerdict.reason, error: api.ok ? "" : api.error, proxyError: api.proxyError },
     loadCodeAssist: { ok: lca.ok, via: lca.via, status: lca.status, state: lcaVerdict.state, reason: lcaVerdict.reason, error: lca.ok ? "" : lca.error, proxyError: lca.proxyError },
-    antigravity: { state: antigravityState, reasons, loggedIn: logEvidence.loggedIn },
+    antigravity: { state: anti.state, source: anti.source, reasons, loggedIn: anti.loggedIn, detectedLocation: anti.detectedLocation, at: anti.at },
+    agyEvidence,
     logEvidence,
   };
 }
@@ -377,6 +581,9 @@ module.exports = {
   classifyGeminiApi,
   classifyLoadCodeAssist,
   findAntigravityLogEvidence,
+  findAgyAuthEvidence,
+  resolveAntigravityState,
+  resolveOverallState,
   scanLogFileForLocation,
   REACH_URL,
   GEMINI_API_URL,
