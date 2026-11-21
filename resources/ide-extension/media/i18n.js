@@ -437,7 +437,8 @@
     "side2.geminiNetwork": ["网络可达", "Network", "Сеть"],
     "side2.geminiApi": ["Gemini API 区域", "Gemini API region", "Регион Gemini API"],
     "side2.geminiAntigravity": ["Antigravity 会话", "Antigravity session", "Сессия Antigravity"],
-    "side2.geminiApiOk": ["地区放行", "region allowed", "регион разрешён"],
+    // 明确标注"匿名 API"：这一层只说明出口 IP 过了 Gemini API 的地区闸门，不代表账号能登录 Antigravity
+    "side2.geminiApiOk": ["地区放行（匿名 API）", "region allowed (anonymous API)", "регион разрешён (анонимный API)"],
     "side2.geminiApiBlocked": ["地区不支持", "region not supported", "регион не поддерживается"],
     "side2.geminiApiUnknown": ["无法判定", "inconclusive", "не определено"],
     "side2.geminiAntiOk": ["未发现限制", "no block found", "ограничений не найдено"],
@@ -445,6 +446,13 @@
     "side2.geminiAntiBlocked": ["被拒（403/1008）", "rejected (403/1008)", "отклонено (403/1008)"],
     "side2.geminiAntiUnknown": ["无法判定", "inconclusive", "не определено"],
     "side2.geminiAntiNoLog": ["未读到会话日志", "no session log found", "журнал сессии не найден"],
+    // agy 登录日志（IDE 2.6+）给出的账号级结论
+    "side2.geminiAntiSignedOut": ["未登录", "not signed in", "вход не выполнен"],
+    "side2.geminiAntiIneligible": ["账号资格被拒", "account ineligible", "аккаунт не допущен"],
+    "side2.geminiAntiIneligibleLoc": ["资格被拒 · 检测地区 {loc}", "ineligible · detected {loc}", "не допущен · регион {loc}"],
+    "side2.geminiAgyBlocked": ["agy 登录日志：Google 判定账号不符合资格（{time}）", "agy sign-in log: Google rejected the account as ineligible ({time})", "журнал входа agy: Google отклонил аккаунт как неподходящий ({time})"],
+    "side2.geminiAgySignedIn": ["agy 登录日志：已登录（{time}）", "agy sign-in log: signed in ({time})", "журнал входа agy: вход выполнен ({time})"],
+    "side2.geminiAgySignedOut": ["agy 登录日志：未登录（{time}）", "agy sign-in log: not signed in ({time})", "журнал входа agy: вход не выполнен ({time})"],
     "side2.geminiLastChecked": ["上次 {time}", "last {time}", "последняя {time}"],
     "side2.geminiInterval": ["每 {seconds} 秒", "every {seconds}s", "каждые {seconds} с"],
     "side2.geminiLogMatched": ["Antigravity 日志命中地区错误（{time}）", "Antigravity log hit a location error ({time})", "В журнале Antigravity найдена ошибка региона ({time})"],

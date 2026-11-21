@@ -237,7 +237,9 @@ function activate(context) {
     try {
       const result = await checkGemini({ proxy: getProxy(), t: tr, appDataDir: process.env.APPDATA });
       geminiState = { checking: false, result, error: "" };
-      log(result.state === "blocked" ? "warn" : "info", `Gemini 检测完成：${result.state}`);
+      // 同时记录 Antigravity 会话层结论与来源（agy 登录日志 / IDE 日志），便于区分"匿名 API 放行"与"账号被拒"
+      const anti = result.antigravity || {};
+      log(result.state === "blocked" ? "warn" : "info", `Gemini 检测完成：${result.state} · Antigravity 会话：${anti.state}（来源：${anti.source || "无"}${anti.detectedLocation ? `，检测地区 ${anti.detectedLocation}` : ""}）`);
     } catch (e) {
       geminiState = { checking: false, result: null, error: /** @type {Error} */ (e).message || String(e) };
       log("warn", `Gemini 检测失败：${geminiState.error}`);
