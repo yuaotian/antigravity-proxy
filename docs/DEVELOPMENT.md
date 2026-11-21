@@ -207,6 +207,9 @@
 # 编译 32 位版本
 .\build.ps1 -Arch x86
 
+# 编译 ARM64 版本（Windows on ARM64，使用 Microsoft Detours 兼容层）
+.\build.ps1 -Arch arm64
+
 # 清理后重新编译
 .\build.ps1 -Clean
 
@@ -244,6 +247,17 @@ mkdir build-x86 && cd build-x86
 
 # 配置
 cmake .. -G "Visual Studio 17 2022" -A Win32
+
+# 编译
+cmake --build . --config Release
+
+# 输出: version.dll
+
+# ========== arm64 (ARM64) ==========
+mkdir build-arm64 && cd build-arm64
+
+# 配置
+cmake .. -G "Visual Studio 17 2022" -A ARM64
 
 # 编译
 cmake --build . --config Release

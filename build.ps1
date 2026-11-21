@@ -14,7 +14,7 @@ param(
     [ValidateSet("Release", "Debug")]
     [string]$Config = "Release",
     
-    [ValidateSet("x64", "x86")]
+    [ValidateSet("x64", "x86", "arm64")]
     [string]$Arch = "x64",
     
     [switch]$StaticRuntime,
@@ -67,7 +67,7 @@ Antigravity-Proxy 编译脚本
 
 参数:
     -Config <Release|Debug>  编译配置 (默认: Release)
-    -Arch   <x64|x86>        目标架构 (默认: x64)
+    -Arch   <x64|x86|arm64> 目标架构 (默认: x64)
     -StaticRuntime           使用静态运行库 (/MT) (默认启用)
     -DynamicRuntime          使用动态运行库 (/MD)
     -Clean                   清理后重新编译
@@ -178,7 +178,7 @@ if (-not (Test-Path $BuildDir)) {
 
 Write-Step "运行 CMake 配置..."
 
-$cmakeArch = if ($Arch -eq "x64") { "x64" } else { "Win32" }
+$cmakeArch = switch ($Arch) { "x64" { "x64" } "arm64" { "ARM64" } default { "Win32" } }
 
 Push-Location $BuildDir
 try {

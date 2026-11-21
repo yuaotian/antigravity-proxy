@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: [x64, x86, arm64]
 
     steps:
     - name: 检出仓库
@@ -43,9 +43,40 @@ jobs:
         "BUILD_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
     # 每个架构只编译一次，共享代码同时生成 IDE 与 CLI 产物。
+    # windows-2022 为 x64 宿主机，arm64 为交叉编译：跳过执行 ARM64 CTest，改跑 JS 单测并校验产物 PE 架构。
     - name: 编译并运行回归测试
       shell: pwsh
-      run: .\build.ps1 -Clean -Config Release -Arch ${{ matrix.arch }} -RunTests
+      run: |
+        $arch = "${{ matrix.arch }}"
+        $hostArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+        if ($arch -eq "arm64" -and $hostArch -ne "arm64") {
+          .\build.ps1 -Clean -Config Release -Arch $arch -SkipTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $node = Get-Command node -ErrorAction SilentlyContinue
+          if ($node) {
+            $jsTests = @("resources\shared\config-core.test.js") + @(Get-ChildItem -Path "resources\ide-extension\test" -Filter "*.test.js" | ForEach-Object { $_.FullName })
+            & $node.Source --test @jsTests
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+        } else {
+          .\build.ps1 -Clean -Config Release -Arch $arch -RunTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+
+        $expectedMachine = switch ($arch) { "x64" { 0x8664 } "x86" { 0x014C } "arm64" { 0xAA64 } }
+        foreach ($bin in @("output\ide\version.dll", "output\cli\dbghelp.dll", "output\cli\antigravity_proxy.dll", "output\cli\agy-acp-proxy.exe", "output\launcher\AntigravityLauncher.exe")) {
+          $fs = [IO.File]::OpenRead($bin)
+          try {
+            $br = New-Object IO.BinaryReader($fs)
+            $fs.Position = 0x3C
+            $fs.Position = $br.ReadInt32() + 4
+            $machine = $br.ReadUInt16()
+          } finally { $fs.Dispose() }
+          if ($machine -ne $expectedMachine) {
+            Write-Error ("{0} PE 架构为 0x{1:X4}，预期为 0x{2:X4}" -f $bin, $machine, $expectedMachine)
+            exit 1
+          }
+        }
 
     - name: 上传 IDE 构建产物
       uses: actions/upload-artifact@v7

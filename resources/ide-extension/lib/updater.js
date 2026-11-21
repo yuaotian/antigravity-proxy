@@ -251,7 +251,7 @@ class ExtensionUpdater {
     this.log("info", this.t("upd.availableLog", { current, latest: release.tag, source }));
 
     if (!asset) {
-      // 架构没有对应资产（例如 arm64）：只提示，不尝试安装
+      // 架构没有对应资产（例如未知架构或尚未提供该架构的旧版本）：只提示，不尝试安装
       this.setState({ status: "error", error: this.t("upd.noAsset", { arch: process.arch }) });
       void this.vscode.window.showWarningMessage(this.t("upd.noAsset", { arch: process.arch }), this.t("upd.openRelease"))
         .then((pick) => pick && this.vscode.env.openExternal(this.vscode.Uri.parse(release.htmlUrl)));

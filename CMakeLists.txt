@@ -26,6 +26,11 @@
 
 cmake_minimum_required(VERSION 3.0...3.5)
 
+# 使 CMAKE_MSVC_RUNTIME_LIBRARY 在 CMake 3.15+ 下生效（否则 STATIC_RUNTIME=/MT 会被静默忽略）
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
+
 project(antigravity-proxy LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -58,17 +63,37 @@ set(MINHOOK_VERSION ${MINHOOK_MAJOR_VERSION}.${MINHOOK_MINOR_VERSION}.${MINHOOK_
 
 option(BUILD_SHARED_LIBS "build shared version" OFF)
 
-# MinHook Sources
-set(SOURCES_MINHOOK 
-  "src/buffer.c"
-  "src/hook.c"
-  "src/trampoline.c"
-)
-
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-  set(SOURCES_HDE "src/hde/hde64.c")
+# 目标是否为 ARM64（MinHook 不支持 ARM64，改用基于 Detours 的兼容层）
+if(MSVC AND (CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "ARM64" OR CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64"))
+  set(AGP_ARM64 ON)
 else()
-  set(SOURCES_HDE "src/hde/hde32.c")
+  set(AGP_ARM64 OFF)
+endif()
+
+if(AGP_ARM64)
+  # Hook 引擎: Microsoft Detours (MIT) + MinHook API 兼容层
+  set(SOURCES_MINHOOK
+    "src/hooks/ArmHook.cpp"
+    "third_party/detours/detours.cpp"
+    "third_party/detours/modules.cpp"
+    "third_party/detours/disasm.cpp"
+    "third_party/detours/disolarm64.cpp"
+    "third_party/detours/image.cpp"
+  )
+  set(SOURCES_HDE "")
+else()
+  # MinHook Sources
+  set(SOURCES_MINHOOK
+    "src/buffer.c"
+    "src/hook.c"
+    "src/trampoline.c"
+  )
+
+  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(SOURCES_HDE "src/hde/hde64.c")
+  else()
+    set(SOURCES_HDE "src/hde/hde32.c")
+  endif()
 endif()
 
 # Proxy Sources
@@ -109,6 +134,9 @@ target_include_directories(version PUBLIC
 
 target_include_directories(version PRIVATE "src/")
 target_include_directories(version PRIVATE "src/hde/")
+if(AGP_ARM64)
+  target_include_directories(version PRIVATE "third_party/detours/")
+endif()
 
 # Link WS2_32 / WinHTTP
 target_link_libraries(version PRIVATE ws2_32 winhttp)
