@@ -101,6 +101,11 @@ const AGY_SIGNED_OUT_MARKERS = Object.freeze([
 ]);
 /** Google 在错误响应里给出的检测地区（Detected location: CN / "detected_location": "CN"），仅作为附加诊断信息 */
 const DETECTED_LOCATION_RE = /Detected location:\s*([A-Z]{2})\b|detected_location\W{0,8}([A-Z]{2})\b/;
+/**
+ * 检测地区的"近期"时间窗：出口 IP 有问题时 agy 每分钟都会收到一次带 Detected location 的 403，
+ * 30 分钟足以覆盖；又能排除几小时前的旧记录（2026-11-21 实测：14:36 的 CN 不应算到 17:58 那次被拒上）。
+ */
+const LOCATION_RECENT_WINDOW_MS = 30 * 60 * 1000;
 
 const DEFAULT_T = I18n.createT("zh-cn");
 
@@ -337,7 +342,12 @@ function classifyAgyLine(line) {
  * - 否则出现过"未登录" → signed-out
  * - 一个认证事件都没有 → none（由调用方回退到旧的 IDE 日志逻辑）
  *
- * @param {{ homeDir?: string, maxBytes?: number }} [opts]
+ * detectedLocation（Google 对 agy 真实流量给出的检测地区，用于区分 IP / 账号原因）：
+ * - blocked：取"被拒前 30 分钟起"最近的一条——被拒时出口 IP 是否也有问题；
+ * - signed-in：取"登录之后且最近 30 分钟内"最近的一条——已登录但仍有请求从受限地区出口（提前提醒）；
+ * - 其余状态为空。
+ *
+ * @param {{ homeDir?: string, maxBytes?: number, now?: number }} [opts]
  * @returns {{
  *   available: boolean, state: "blocked" | "signed-in" | "signed-out" | "none",
  *   at: number, path: string, line: string, detectedLocation: string, filesScanned: number
@@ -395,12 +405,11 @@ function findAgyAuthEvidence(opts = {}) {
   events.sort((a, b) => a.at - b.at);
   /** @type {Record<string, { at: number, line: string, path: string } | null>} */
   const last = { blocked: null, "signed-in": null, "signed-out": null };
-  // 只保留"最近一次登录有效之后"的检测地区：登录成功前的旧地区信息与当前故障无关
-  let detectedLocation = "";
+  /** @type {{ at: number, location: string } | null} 时间上最近的一条检测地区 */
+  let lastLocation = null;
   for (const e of events) {
     if (e.kind) last[e.kind] = { at: e.at, line: e.line, path: e.path };
-    if (e.kind === "signed-in") detectedLocation = "";
-    if (e.location) detectedLocation = e.location;
+    if (e.location) lastLocation = { at: e.at, location: e.location };
   }
 
   const { blocked, "signed-in": signedIn, "signed-out": signedOut } = last;
@@ -412,14 +421,20 @@ function findAgyAuthEvidence(opts = {}) {
   else if (signedIn && (!signedOut || signedIn.at >= signedOut.at)) { state = "signed-in"; pick = signedIn; }
   else if (signedOut) { state = "signed-out"; pick = signedOut; }
 
+  // 只认"近期"的检测地区：几小时前的旧记录不能拿来解释当前的结论（见 LOCATION_RECENT_WINDOW_MS）
+  const now = opts.now ?? Date.now();
+  let since = Infinity;
+  if (state === "blocked" && blocked) since = blocked.at - LOCATION_RECENT_WINDOW_MS;
+  else if (state === "signed-in" && signedIn) since = Math.max(signedIn.at, now - LOCATION_RECENT_WINDOW_MS);
+  const detectedLocation = lastLocation && lastLocation.at >= since ? lastLocation.location : "";
+
   return {
     available,
     state,
     at: pick ? pick.at : 0,
     path: pick ? pick.path : "",
     line: pick ? pick.line : "",
-    // 检测地区只在"被拒"时有诊断意义；正常会话里 FetchConfig 也会返回地区，展示出来反而误导
-    detectedLocation: state === "blocked" ? detectedLocation : "",
+    detectedLocation,
     filesScanned: files.length,
   };
 }
@@ -442,7 +457,8 @@ function resolveAntigravityState({ lcaVerdict, agy, logEvidence }) {
   if (agy && agy.state !== "none") {
     const at = agy.at;
     if (agy.state === "blocked") return { ...base, state: "blocked", source: "agy", detectedLocation: agy.detectedLocation, at };
-    if (agy.state === "signed-in") return { ...base, state: "ok", source: "agy", loggedIn: true, at };
+    // 已登录时也带上近期检测地区：用于"已登录但仍有请求从受限地区出口"的提前提醒
+    if (agy.state === "signed-in") return { ...base, state: "ok", source: "agy", loggedIn: true, detectedLocation: agy.detectedLocation, at };
     return { ...base, state: "signed-out", source: "agy", at };
   }
 
@@ -452,6 +468,29 @@ function resolveAntigravityState({ lcaVerdict, agy, logEvidence }) {
   if (lcaVerdict.state === "ok") return { ...base, state: "ok", source: "loadCodeAssist" };
   if (logEvidence.available) return { ...base, state: "inconclusive", source: "ide-log" };
   return { ...base, state: "unknown", source: "" };
+}
+
+/**
+ * "资格被拒"的原因诊断（纯函数，排除法）。
+ *
+ * Google 不会在客户端日志里说明被拒是因为 IP 还是账号（agy 只记 failure_kind=ineligible），
+ * 官方答复称 Antigravity 按「账号《服务条款》关联地区」判定资格；但出口 IP 不受支持同样会被拒。
+ * 因此用 Google 自己给出的 IP 判定信号做排除：
+ * - ip：近期 Google 对 agy 流量给出了检测地区（LOCATION_NOT_ELIGIBLE），或 Gemini API 探测判定出口地区不支持；
+ *       匿名 loadCodeAssist 命中地区错误同理（请求不带账号，只可能是 IP）
+ * - account：近期没有任何地区拒绝，且 Gemini API 放行了出口 IP → 疑似账号关联地区 / 账号类型 / 年龄验证
+ * - unknown：信号不足（如 API 探测失败），无法排除
+ * 非 agy / loadCodeAssist 来源（旧版 IDE 日志）不做诊断，返回空串以保持原有展示。
+ *
+ * @param {{ source: string, detectedLocation: string, apiState: string }} input
+ * @returns {"ip" | "account" | "unknown" | ""}
+ */
+function diagnoseIneligibleCause({ source, detectedLocation, apiState }) {
+  if (source === "loadCodeAssist") return "ip";
+  if (source !== "agy") return "";
+  if (detectedLocation || apiState === "blocked") return "ip";
+  if (apiState === "ok") return "account";
+  return "unknown";
 }
 
 /**
@@ -526,8 +565,12 @@ async function checkGemini(opts = {}) {
   const lcaVerdict = lca.ok ? classifyLoadCodeAssist(lca.status, lca.text) : { state: "error", reason: lca.error || "network" };
   const logEvidence = findAntigravityLogEvidence({ appDataDir: opts.appDataDir, now: opts.now });
   // agy 登录日志：账号资格的权威证据（IDE 2.6+）
-  const agyEvidence = findAgyAuthEvidence({ homeDir: opts.homeDir });
+  const agyEvidence = findAgyAuthEvidence({ homeDir: opts.homeDir, now: opts.now });
   const anti = resolveAntigravityState({ lcaVerdict, agy: agyEvidence, logEvidence });
+  // 被拒时用排除法区分 IP / 账号原因（Google 不在日志里说明具体原因）
+  const cause = anti.state === "blocked"
+    ? diagnoseIneligibleCause({ source: anti.source, detectedLocation: anti.detectedLocation, apiState: apiVerdict.state })
+    : "";
 
   const probes = [reach, api, lca];
   const anySuccess = probes.some((p) => p.ok);
@@ -552,6 +595,7 @@ async function checkGemini(opts = {}) {
     if (logEvidence.matched) reasons.push({ code: "antigravity-log-location", ok: false });
     if (logEvidence.loggedIn && anti.state !== "blocked") reasons.push({ code: "antigravity-session-ok", ok: true });
   }
+  if (cause) reasons.push({ code: `ineligible-cause-${cause}`, ok: false });
   if (apiVerdict.reason === "region-ok") reasons.push({ code: "region-ok", ok: true });
 
   return {
@@ -570,7 +614,7 @@ async function checkGemini(opts = {}) {
     },
     geminiApi: { ok: api.ok, via: api.via, status: api.status, state: apiVerdict.state, reason: apiVerdict.reason, error: api.ok ? "" : api.error, proxyError: api.proxyError },
     loadCodeAssist: { ok: lca.ok, via: lca.via, status: lca.status, state: lcaVerdict.state, reason: lcaVerdict.reason, error: lca.ok ? "" : lca.error, proxyError: lca.proxyError },
-    antigravity: { state: anti.state, source: anti.source, reasons, loggedIn: anti.loggedIn, detectedLocation: anti.detectedLocation, at: anti.at },
+    antigravity: { state: anti.state, source: anti.source, cause, reasons, loggedIn: anti.loggedIn, detectedLocation: anti.detectedLocation, at: anti.at },
     agyEvidence,
     logEvidence,
   };
@@ -584,6 +628,7 @@ module.exports = {
   findAgyAuthEvidence,
   resolveAntigravityState,
   resolveOverallState,
+  diagnoseIneligibleCause,
   scanLogFileForLocation,
   REACH_URL,
   GEMINI_API_URL,

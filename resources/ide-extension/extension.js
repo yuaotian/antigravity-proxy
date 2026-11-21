@@ -239,7 +239,8 @@ function activate(context) {
       geminiState = { checking: false, result, error: "" };
       // 同时记录 Antigravity 会话层结论与来源（agy 登录日志 / IDE 日志），便于区分"匿名 API 放行"与"账号被拒"
       const anti = result.antigravity || {};
-      log(result.state === "blocked" ? "warn" : "info", `Gemini 检测完成：${result.state} · Antigravity 会话：${anti.state}（来源：${anti.source || "无"}${anti.detectedLocation ? `，检测地区 ${anti.detectedLocation}` : ""}）`);
+      // cause：被拒原因的排除法诊断（ip / account / unknown），便于从日志直接看出是 IP 还是账号问题
+      log(result.state === "blocked" ? "warn" : "info", `Gemini 检测完成：${result.state} · Antigravity 会话：${anti.state}（来源：${anti.source || "无"}${anti.detectedLocation ? `，检测地区 ${anti.detectedLocation}` : ""}${anti.cause ? `，原因诊断 ${anti.cause}` : ""}）`);
     } catch (e) {
       geminiState = { checking: false, result: null, error: /** @type {Error} */ (e).message || String(e) };
       log("warn", `Gemini 检测失败：${geminiState.error}`);
@@ -338,6 +339,8 @@ function activate(context) {
     reloadWindow: () => vscode.commands.executeCommand("workbench.action.reloadWindow"),
     refreshLogs: () => logService.rescan(),
     setupAcp,
+    // 疑似账号关联地区导致资格被拒时，打开 Google 官方的关联地区更改表单（固定 URL，不接受 webview 传入）
+    openCountryAssociation: () => vscode.env.openExternal(vscode.Uri.parse("https://policies.google.com/country-association-form")),
   };
 
   const getSettings = () => {
