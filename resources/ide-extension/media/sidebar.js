@@ -200,9 +200,16 @@
     }
     const gemMeta = h("div", { class: "meta", id: "gem-meta", text: "" });
     const gemLog = h("div", { class: "hint", id: "gem-log", hidden: true });
+    // 账号关联地区入口：只在"疑似账号原因"时显示。
+    // 只绑 on.click、不加 data-action：避免与底部的事件委托重复发送 action
+    const gemFix = h("button", {
+      class: "act gem-fix", id: "gem-fix", hidden: true, title: T("side2.geminiFixAccountTip"),
+      on: { click: () => post({ type: "action", action: "openCountryAssociation" }) },
+    }, icon("link-external"), h("span", { text: T("side2.geminiFixAccount") }));
     refs["gem-meta"] = gemMeta;
     refs["gem-log"] = gemLog;
-    gemCard.append(gemMeta, gemLog);
+    refs["gem-fix"] = gemFix;
+    gemCard.append(gemMeta, gemLog, gemFix);
 
     // ---- 日志 ----
     const levelSelect = /** @type {HTMLSelectElement} */ (h("select", { class: "log-level", id: "log-level", title: T("side2.logLevel") },
@@ -297,6 +304,7 @@
     refs["gem-badge"] = /** @type {any} */ (app.querySelector("#gem-badge"));
     refs["gem-meta"] = /** @type {any} */ (app.querySelector("#gem-meta"));
     refs["gem-log"] = /** @type {any} */ (app.querySelector("#gem-log"));
+    refs["gem-fix"] = /** @type {any} */ (app.querySelector("#gem-fix"));
     refs["upd-btn"] = /** @type {any} */ (app.querySelector("#upd-btn"));
     refs["upd-dot"] = /** @type {any} */ (app.querySelector("#upd-dot"));
     refs["lang-btn"] = /** @type {any} */ (app.querySelector("#lang-btn"));
@@ -495,6 +503,7 @@
       }
       setText(meta, T("side2.geminiNever"));
       if (logEl) logEl.hidden = true;
+      if (refs["gem-fix"]) refs["gem-fix"].hidden = true;
       for (const key of ["network", "api", "anti"]) {
         setDot(refs[`gemdot-${key}`], "idle");
         setText(refs[`gemval-${key}`], "—");
@@ -542,14 +551,18 @@
 
     // Antigravity 真实链路
     const anti = result.antigravity || {};
-    const antiKind = anti.state === "blocked" ? "err" : anti.state === "ok" ? "ok" : "warn";
+    const loc = anti.detectedLocation || "";
+    // 已登录但近期仍检测到受限出口地区：降为警告色（提前提醒，不影响"已登录"结论）
+    const antiKind = anti.state === "blocked" ? "err" : anti.state === "ok" ? (loc ? "warn" : "ok") : "warn";
     setDot(refs["gemdot-anti"], antiKind);
-    // 被拒时区分来源：agy 登录日志给出的是"账号资格被拒"（可能附带 Google 检测地区），其余沿用 403/1008 文案
+    // 被拒时按排除法诊断的原因展示（ip / account / unknown），旧版 IDE 日志来源沿用 403/1008 文案
     setText(refs["gemval-anti"], anti.state === "blocked"
-        ? (anti.detectedLocation ? T("side2.geminiAntiIneligibleLoc", { loc: anti.detectedLocation })
+        ? (anti.cause === "ip" ? (loc ? T("side2.geminiAntiIneligibleLoc", { loc }) : T("side2.geminiAntiCauseIp"))
+          : anti.cause === "account" ? T("side2.geminiAntiCauseAccount")
           : anti.source === "agy" ? T("side2.geminiAntiIneligible")
           : T("side2.geminiAntiBlocked"))
-      : anti.state === "ok" ? (anti.loggedIn ? T("side2.geminiAntiLoggedIn") : T("side2.geminiAntiOk"))
+      : anti.state === "ok" ? (loc ? T("side2.geminiAntiOkLocWarn", { loc })
+          : anti.loggedIn ? T("side2.geminiAntiLoggedIn") : T("side2.geminiAntiOk"))
       : anti.state === "signed-out" ? T("side2.geminiAntiSignedOut")
       : anti.state === "unknown" ? T("side2.geminiAntiNoLog")
       : T("side2.geminiAntiUnknown"));
@@ -565,8 +578,15 @@
         logEl.hidden = false;
         const time = formatEventTime(agy.at);
         if (agy.state === "blocked") {
+          // 提示行直接给出下一步：IP 原因先修代理分流；账号原因去核对关联地区
           logEl.className = "hint err";
-          logEl.textContent = T("side2.geminiAgyBlocked", { time });
+          logEl.textContent = anti.cause === "ip"
+            ? (loc ? T("side2.geminiAgyCauseIp", { time, loc }) : T("side2.geminiAgyCauseIpApi", { time }))
+            : anti.cause === "account" ? T("side2.geminiAgyCauseAccount", { time })
+            : T("side2.geminiAgyBlocked", { time });
+        } else if (agy.state === "signed-in" && loc) {
+          logEl.className = "hint warn";
+          logEl.textContent = T("side2.geminiAgyLocWarn", { time, loc });
         } else if (agy.state === "signed-in") {
           logEl.className = "hint ok";
           logEl.textContent = T("side2.geminiAgySignedIn", { time });
@@ -590,6 +610,11 @@
         logEl.textContent = "";
       }
     }
+
+    // 只在"疑似账号原因 / 无法排除"时给出关联地区入口；
+    // IP 原因应先修代理，修好后若仍被拒，下一次检测会自动转为 account 并显示该入口
+    const fix = refs["gem-fix"];
+    if (fix) fix.hidden = !(anti.state === "blocked" && (anti.cause === "account" || anti.cause === "unknown"));
   }
 
   /** 更新入口收敛到头部一个小图标：hover 看状态，点击按状态检查/下载安装/重载。 */

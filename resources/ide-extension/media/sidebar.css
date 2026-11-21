@@ -464,6 +464,8 @@ mark {
 
 .act:hover { background: var(--hover); border-color: var(--vscode-focusBorder); }
 .act span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Gemini 卡片内的「查看 / 更改账号关联地区」入口：占满一行，与提示行留出间距 */
+.act.gem-fix { width: 100%; margin-top: 6px; }
 
 /* ---------- Toast ---------- */
 .toast {
