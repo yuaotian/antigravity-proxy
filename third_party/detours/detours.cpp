@@ -1745,10 +1745,48 @@ static void detour_free_unused_trampoline_regions()
 
 ///////////////////////////////////////////////////////// Transaction Structs.
 //
+// Dedicated private heap for transaction nodes (DetourThread / DetourOperation)
+// so DetourUpdateThread / DetourTransactionCommit never contend on GetProcessHeap()
+// while other threads in the process are suspended.
+static HANDLE               s_hTransactionHeap      = NULL;
+
+static BOOL detour_trans_ensure_heap()
+{
+    if (s_hTransactionHeap != NULL) {
+        return TRUE;
+    }
+    HANDLE hNew = HeapCreate(0, 0, 0);
+    if (hNew == NULL) {
+        return FALSE;
+    }
+    if (InterlockedCompareExchangePointer(&s_hTransactionHeap, hNew, NULL) != NULL) {
+        HeapDestroy(hNew);
+    }
+    return TRUE;
+}
+
+static PVOID detour_trans_alloc(size_t cb) noexcept
+{
+    if (!detour_trans_ensure_heap()) {
+        return NULL;
+    }
+    return HeapAlloc(s_hTransactionHeap, 0, cb);
+}
+
+static void detour_trans_free(PVOID p) noexcept
+{
+    if (p != NULL && s_hTransactionHeap != NULL) {
+        HeapFree(s_hTransactionHeap, 0, p);
+    }
+}
+
 struct DetourThread
 {
     DetourThread *      pNext;
     HANDLE              hThread;
+
+    static void * operator new(size_t cb) noexcept { return detour_trans_alloc(cb); }
+    static void operator delete(void * p) noexcept { detour_trans_free(p); }
 };
 
 struct DetourOperation
@@ -1762,6 +1800,9 @@ struct DetourOperation
     PBYTE               pbTarget;
     PDETOUR_TRAMPOLINE  pTrampoline;
     ULONG               dwPerm;
+
+    static void * operator new(size_t cb) noexcept { return detour_trans_alloc(cb); }
+    static void operator delete(void * p) noexcept { detour_trans_free(p); }
 };
 
 static BOOL                 s_fIgnoreTooSmall       = FALSE;
@@ -1878,6 +1919,11 @@ _Benign_race_end_
     // Make sure only one thread can start a transaction.
     if (InterlockedCompareExchange(&s_nPendingThreadId, (LONG)GetCurrentThreadId(), 0) != 0) {
         return ERROR_INVALID_OPERATION;
+    }
+
+    if (!detour_trans_ensure_heap()) {
+        s_nPendingThreadId = 0;
+        return ERROR_NOT_ENOUGH_MEMORY;
     }
 
     s_pPendingOperations = NULL;

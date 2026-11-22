@@ -26,11 +26,6 @@
 
 cmake_minimum_required(VERSION 3.0...3.5)
 
-# 使 CMAKE_MSVC_RUNTIME_LIBRARY 在 CMake 3.15+ 下生效（否则 STATIC_RUNTIME=/MT 会被静默忽略）
-if(POLICY CMP0091)
-    cmake_policy(SET CMP0091 NEW)
-endif()
-
 project(antigravity-proxy LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -320,4 +315,19 @@ if(BUILD_TESTS)
   )
   target_link_libraries(proxy_auth_tests PRIVATE ws2_32)
   add_test(NAME proxy_auth_tests COMMAND proxy_auth_tests)
+
+  add_executable(hook_engine_tests
+    "tests/test_hook_engine.cpp"
+    ${SOURCES_MINHOOK}
+    ${SOURCES_HDE}
+  )
+  target_include_directories(hook_engine_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hde"
+  )
+  if(AGP_ARM64)
+    target_include_directories(hook_engine_tests PRIVATE "third_party/detours/")
+  endif()
+  add_test(NAME hook_engine_tests COMMAND hook_engine_tests)
 endif()
