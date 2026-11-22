@@ -621,8 +621,8 @@ function Get-RunningState {
             try { $procPath = [string]$proc.Path } catch { }
 
             # 只统计目标目录树内的进程：多个安装目录共存时不能互相冒名，
-            # 系统里无关的 node.exe 或权限受限无法读取路径的沙箱进程也不该被算作当前目录的进程。
-            if (-not $procPath -or -not (Test-PathInside $procPath $BaseDir)) { continue }
+            # 系统里无关的 node.exe 也不该被算作后端子进程。
+            if ($procPath -and -not (Test-PathInside $procPath $BaseDir)) { continue }
 
             if ($isHost) { $result.HostRunning++ } else { $result.ChildRunning++ }
 
