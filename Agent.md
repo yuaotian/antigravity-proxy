@@ -8,7 +8,7 @@
 ```text
 push tag vX.Y.Z
   -> GitHub Actions: Release workflow
-  -> 构建 x64 / x86 + 生成 GitHub Release 资产
+  -> 构建 x64 / x86（及非阻断的 arm64）+ 生成 GitHub Release 资产
   -> 同一次 workflow 的 publish-openvsx job
   -> npx ovsx publish（x64 VSIX）
   -> Open VSX 扫描后激活
@@ -72,6 +72,7 @@ https://github.com/yuaotian/antigravity-proxy/actions
 
 - `Build x64 (IDE + CLI)`：success
 - `Build x86 (IDE + CLI)`：success
+- `Build arm64 (IDE + CLI)`：success（已配置 `continue-on-error`，若失败不会阻断 `Publish Release` 与 `Publish Open VSX`，但应排查修复或补传资产）
 - `Publish Release`：success
 - `Publish Open VSX`：success
 

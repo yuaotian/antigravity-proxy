@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, x86, arm64]
+        arch: [x64, x86]
 
     outputs:
       release_tag: ${{ steps.prepare_version.outputs.release_tag }}
@@ -97,40 +97,9 @@ jobs:
         Write-Host "已同步 build.ps1 版本号为：$ver"
 
     # 每个架构只编译一次，共享代码同时生成 IDE 与 CLI 产物。
-    # windows-2022 为 x64 宿主机，arm64 为交叉编译：跳过执行 ARM64 CTest，改跑 JS 单测并校验产物 PE 架构。
     - name: 编译并运行回归测试
       shell: pwsh
-      run: |
-        $arch = "${{ matrix.arch }}"
-        $hostArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-        if ($arch -eq "arm64" -and $hostArch -ne "arm64") {
-          .\build.ps1 -Clean -Config Release -Arch $arch -SkipTests
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $node = Get-Command node -ErrorAction SilentlyContinue
-          if ($node) {
-            $jsTests = @("resources\shared\config-core.test.js") + @(Get-ChildItem -Path "resources\ide-extension\test" -Filter "*.test.js" | ForEach-Object { $_.FullName })
-            & $node.Source --test @jsTests
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-        } else {
-          .\build.ps1 -Clean -Config Release -Arch $arch -RunTests
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        }
-
-        $expectedMachine = switch ($arch) { "x64" { 0x8664 } "x86" { 0x014C } "arm64" { 0xAA64 } }
-        foreach ($bin in @("output\ide\version.dll", "output\cli\dbghelp.dll", "output\cli\antigravity_proxy.dll", "output\cli\agy-acp-proxy.exe", "output\launcher\AntigravityLauncher.exe")) {
-          $fs = [IO.File]::OpenRead($bin)
-          try {
-            $br = New-Object IO.BinaryReader($fs)
-            $fs.Position = 0x3C
-            $fs.Position = $br.ReadInt32() + 4
-            $machine = $br.ReadUInt16()
-          } finally { $fs.Dispose() }
-          if ($machine -ne $expectedMachine) {
-            Write-Error ("{0} PE 架构为 0x{1:X4}，预期为 0x{2:X4}" -f $bin, $machine, $expectedMachine)
-            exit 1
-          }
-        }
+      run: .\build.ps1 -Clean -Config Release -Arch ${{ matrix.arch }} -RunTests
 
     # 复用本地打包脚本，生成互不混装的 IDE/CLI Release 资产。
     - name: 打包 IDE/CLI 独立产物
@@ -183,6 +152,154 @@ jobs:
         compression-level: 0
         retention-days: 1
 
+  # ARM64 独立为一个非阻断构建 job：若交叉编译偶发失败，不影响 x64 / x86 的 Open VSX 与 GitHub Release 发布。
+  build-arm64:
+    name: Build arm64 (IDE + CLI)
+    runs-on: windows-2022
+    timeout-minutes: 30
+    continue-on-error: true
+
+    steps:
+    - name: 检出仓库
+      uses: actions/checkout@v6
+
+    - name: 准备版本号
+      id: prepare_version
+      shell: pwsh
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        INPUT_VERSION: ${{ inputs.version }}
+        REF_NAME: ${{ github.ref_name }}
+      run: |
+        if ($env:EVENT_NAME -eq "workflow_dispatch") {
+          $rawVersion = $env:INPUT_VERSION
+          $normalized = $rawVersion.Trim()
+          if ($normalized.StartsWith("v", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $normalized = $normalized.Substring(1)
+          }
+          $tag = "v$normalized"
+        } else {
+          $tag = $env:REF_NAME
+          $normalized = $tag
+          if ($normalized.StartsWith("v")) { $normalized = $normalized.Substring(1) }
+        }
+        if ($normalized -notmatch '^\d+\.\d+(?:\.\d+)?$') {
+          Write-Error "发布版本格式错误: $normalized（应为 1.2 或 1.2.3）"
+          exit 1
+        }
+        "release_tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "release_version=$normalized" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+    - name: 同步版本号到 build.ps1
+      shell: pwsh
+      env:
+        RELEASE_VERSION: ${{ steps.prepare_version.outputs.release_version }}
+      run: |
+        $ver = $env:RELEASE_VERSION
+        if ([string]::IsNullOrWhiteSpace($ver)) {
+          Write-Error "发布版本号为空，已终止 build.ps1 同步"
+          exit 1
+        }
+
+        $path = Join-Path $env:GITHUB_WORKSPACE "build.ps1"
+        if (-not (Test-Path $path)) {
+          Write-Error "未找到 build.ps1：$path"
+          exit 1
+        }
+
+        $content = Get-Content -Path $path -Raw -Encoding UTF8
+        $pattern = '(?m)^\s*\$Version\s*=\s*".*?"\s*$'
+        if (-not [regex]::IsMatch($content, $pattern)) {
+          Write-Error "未在 build.ps1 中找到 `$Version = \"...\"` 版本号行，已终止自动更新。"
+          exit 1
+        }
+
+        $replacement = ('$Version = "{0}"' -f $ver)
+        $newContent = [regex]::Replace($content, $pattern, $replacement, 1)
+        Set-Content -Path $path -Value $newContent -Encoding UTF8
+        Write-Host "已同步 build.ps1 版本号为：$ver"
+
+    # windows-2022 为 x64 宿主机，arm64 为交叉编译：跳过执行 ARM64 CTest，改跑 JS 单测并校验产物 PE 架构。
+    - name: 编译并运行校验测试
+      shell: pwsh
+      run: |
+        $hostArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+        if ($hostArch -ne "arm64") {
+          .\build.ps1 -Clean -Config Release -Arch arm64 -SkipTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $node = Get-Command node -ErrorAction SilentlyContinue
+          if ($node) {
+            $jsTests = @("resources\shared\config-core.test.js") + @(Get-ChildItem -Path "resources\ide-extension\test" -Filter "*.test.js" | ForEach-Object { $_.FullName })
+            & $node.Source --test @jsTests
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+        } else {
+          .\build.ps1 -Clean -Config Release -Arch arm64 -RunTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+
+        foreach ($bin in @("output\ide\version.dll", "output\cli\dbghelp.dll", "output\cli\antigravity_proxy.dll", "output\cli\agy-acp-proxy.exe", "output\launcher\AntigravityLauncher.exe")) {
+          $fs = [IO.File]::OpenRead($bin)
+          try {
+            $br = New-Object IO.BinaryReader($fs)
+            $fs.Position = 0x3C
+            $fs.Position = $br.ReadInt32() + 4
+            $machine = $br.ReadUInt16()
+          } finally { $fs.Dispose() }
+          if ($machine -ne 0xAA64) {
+            Write-Error ("{0} PE 架构为 0x{1:X4}，预期为 0xAA64" -f $bin, $machine)
+            exit 1
+          }
+        }
+
+    - name: 打包 IDE/CLI 独立产物
+      id: package
+      shell: pwsh
+      env:
+        RELEASE_TAG: ${{ steps.prepare_version.outputs.release_tag }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $packageDir = Join-Path $env:RUNNER_TEMP "release-packages"
+        .\scripts\package-release.ps1 `
+          -Version $env:RELEASE_TAG `
+          -Arch arm64 `
+          -OutputDir (Join-Path $env:GITHUB_WORKSPACE "output") `
+          -DestinationDir $packageDir | Out-Host
+
+        $ideZip = Join-Path $packageDir "antigravity-proxy-$($env:RELEASE_TAG)-ide-win-arm64.zip"
+        $cliZip = Join-Path $packageDir "antigravity-proxy-$($env:RELEASE_TAG)-cli-win-arm64.zip"
+        $vsix = Join-Path $packageDir "antigravity-proxy-$($env:RELEASE_TAG)-ide-extension-win-arm64.vsix"
+        "ide_zip_path=$ideZip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "cli_zip_path=$cliZip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "vsix_path=$vsix" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+    - name: 上传 IDE 打包文件
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-asset-ide-arm64
+        path: ${{ steps.package.outputs.ide_zip_path }}
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 1
+
+    - name: 上传 CLI 打包文件
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-asset-cli-arm64
+        path: ${{ steps.package.outputs.cli_zip_path }}
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 1
+
+    - name: 上传 IDE 插件
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-asset-vsix-arm64
+        path: ${{ steps.package.outputs.vsix_path }}
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 1
+
   # 直接依赖 build 产物发布，避免依赖 release:published 事件
   # （GitHub 会抑制由 GITHUB_TOKEN 创建 release 所触发的后续 workflow）。
   publish-openvsx:
@@ -216,7 +333,7 @@ jobs:
   release:
     name: Publish Release
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, build-arm64]
     timeout-minutes: 20
     permissions:
       contents: write
