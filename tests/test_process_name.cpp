@@ -72,5 +72,17 @@ int main() {
                "C:\\Users\\test\\AppData\\Local\\Temp\\_MEI12345\\localharness_external.exe --uid=") ==
            "localharness_external.exe");
 
+    // 任意 Chromium / Electron 宿主的 NetworkService 实用进程均应命中旁路，其他类型不误匹配。
+    using Hooks::IsChromiumNetworkServiceCommandLine;
+    assert(!IsChromiumNetworkServiceCommandLine(nullptr));
+    assert(!IsChromiumNetworkServiceCommandLine(L"\"T3 Code (Beta).exe\""));
+    assert(!IsChromiumNetworkServiceCommandLine(
+        L"\"T3 Code (Beta).exe\" --type=renderer --disable-features=LocalNetworkAccessChecks,NetworkServiceSandbox"));
+    assert(IsChromiumNetworkServiceCommandLine(
+        L"\"C:\\Users\\test\\AppData\\Local\\Programs\\t3code\\T3 Code (Beta).exe\" --type=utility "
+        L"--utility-sub-type=network.mojom.NetworkService --lang=en-US"));
+    assert(IsChromiumNetworkServiceCommandLine(
+        L"\"Antigravity.exe\" --type=utility --utility-sub-type=network.mojom.NetworkService"));
+
     return 0;
 }

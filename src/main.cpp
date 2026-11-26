@@ -121,9 +121,7 @@ namespace {
     }
 
     static bool IsChromiumNetworkServiceProcess() {
-        const wchar_t* commandLine = GetCommandLineW();
-        return commandLine != nullptr &&
-               std::wcsstr(commandLine, L"--utility-sub-type=network.mojom.NetworkService") != nullptr;
+        return Hooks::IsChromiumNetworkServiceCommandLine(GetCommandLineW());
     }
 
     struct LoadNotifyPayload {
@@ -286,10 +284,10 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
         }
         g_ownsHooks = true;
 
-        // 诊断构建：只旁路 Chromium NetworkService，用于区分宿主进程角色对本地 TLS 的影响。
+        // 旁路所有 Chromium / Electron 宿主的 NetworkService 进程（如 Antigravity、T3 Code 等）：
+        // Chromium 非阻塞 connect() 若同步返回 0 会触发 TCPSocketWin::DoConnect 的 NOTREACHED() 崩溃。
         const std::string processName = GetCurrentProcessBaseName();
-        const bool bypassNetworkService =
-            Hooks::IsAntigravityHostProcessName(processName) && IsChromiumNetworkServiceProcess();
+        const bool bypassNetworkService = IsChromiumNetworkServiceProcess();
         const bool enableNetworkHooks = !bypassNetworkService;
         Core::Logger::Info(enableNetworkHooks
             ? "当前进程 " + processName + " 使用全量模式：安装网络与进程创建 Hook"

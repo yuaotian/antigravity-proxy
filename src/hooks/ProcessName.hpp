@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cwchar>
 #include <string>
 #include <utility>
 
@@ -88,6 +89,14 @@ inline bool IsAntigravityHostProcessName(const std::string& processName) {
     const std::string lowerName = ToLowerAsciiCopy(processName);
     return lowerName == "antigravity.exe" ||
            lowerName == "antigravity ide.exe";
+}
+
+// 任意 Chromium / Electron 宿主派生的 NetworkService 实用进程（如 Antigravity、T3 Code 等）
+// 在 Windows 下经非阻塞 connect() 建连，Chromium TCPSocketWin::DoConnect 对 connect()==0
+// 会直接触发 NOTREACHED() 崩溃；因此只要命令行带该子类型标志，均应走 NetworkService 旁路模式。
+inline bool IsChromiumNetworkServiceCommandLine(const wchar_t* commandLine) {
+    return commandLine != nullptr &&
+           std::wcsstr(commandLine, L"--utility-sub-type=network.mojom.NetworkService") != nullptr;
 }
 
 // ACP Registry 分发的 Google Antigravity ACP 服务端（antigravity-acp/agent.json 中 Windows 的 cmd）。
