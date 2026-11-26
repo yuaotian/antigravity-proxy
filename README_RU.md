@@ -63,6 +63,31 @@ Antigravity-Proxy — это патч прокси (DLL), который нач�
 
 <!-- Период размещения: 2026-11-09 ~ 2026-12-09 (только в исходнике, не отображается) -->
 
+<table>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="https://www.deepsiderapi.com/?utm_source=antigravity-proxy">
+        <img src="img/ad/deepsider-api.jpg" alt="deepsiderapi — единый API для GPT, Claude, Gemini и DeepSeek" width="100%"/>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>deepsiderapi</b><br/>
+      Единый API для работы с GPT, Claude, Gemini, DeepSeek и другими ведущими моделями. Запросы идут по официальным каналам поставщиков, без пулов аккаунтов и обратной разработки. Цены на запросы — от 29 % официальных тарифов. Статистика в реальном времени показывает объём использования и расходы, помогая снизить затраты на работу с ИИ.
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">💡 <b>От 29 % официальной цены</b></td>
+    <td align="center" width="50%">📊 Статистика в реальном времени</td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="https://www.deepsiderapi.com/?utm_source=antigravity-proxy"><b>👉 Подключиться к deepsiderapi</b></a>
+    </td>
+  </tr>
+</table>
+
 ## Установка
 
 ### Способ 1: маркетплейс Antigravity IDE (рекомендуется)

@@ -36,6 +36,8 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 
 > 📣 **广告位招租**：本 README 长期开放广告位，面向代理 IP / 云服务 / 开发工具等同类产品，支持「图片 + 跳转链接 + 短文案」，按月投放。合作请联系微信 **`JavaRookie666`**（优先，回复最快），或 Telegram [@yuaotian](https://t.me/yuaotian)。
 
+<!-- ipwo 广告投放期：2026-11-09 ~ 2026-12-09（仅源码可见，不渲染） -->
+
 <table>
   <tr>
     <td align="center" colspan="2">
@@ -61,7 +63,32 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
   </tr>
 </table>
 
-<!-- 广告投放期：2026-11-09 ~ 2026-12-09（仅源码可见，不渲染） -->
+<!-- deepsiderapi 广告投放期：2026-11-26 ~ 2026-12-26（仅源码可见，不渲染） -->
+
+<table>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="https://www.deepsiderapi.com/?utm_source=antigravity-proxy">
+        <img src="img/ad/deepsider-api.jpg" alt="deepsiderapi 模型 API — 一站式接入 GPT、Claude、Gemini、DeepSeek" width="100%"/>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>deepsiderapi</b><br/>
+      一站式接入 GPT、Claude、Gemini、DeepSeek等全球主流模型API。采用大厂官方渠道，非号池、非逆向。调用价格低至官方定价2.9折。支持实时用量监控，消费透明、用量清晰，助你以更低成本轻松调用AI。
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">💡 <b>调用价格低至官方定价 2.9 折</b></td>
+    <td align="center" width="50%">📊 实时用量监控</td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="https://www.deepsiderapi.com/?utm_source=antigravity-proxy"><b>👉 前往 deepsiderapi 接入 API</b></a>
+    </td>
+  </tr>
+</table>
 
 ## 安装
 

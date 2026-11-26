@@ -63,6 +63,31 @@ Antigravity-Proxy is a proxy patch (DLL) that works once you put it in the Antig
 
 <!-- Ad run: 2026-11-09 ~ 2026-12-09 (source only, not rendered) -->
 
+<table>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="https://www.deepsiderapi.com/?utm_source=antigravity-proxy">
+        <img src="img/ad/deepsider-api.jpg" alt="deepsiderapi model API — one API for GPT, Claude, Gemini and DeepSeek" width="100%"/>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>deepsiderapi</b><br/>
+      Access GPT, Claude, Gemini, DeepSeek and other leading models through a single API. Requests go through the providers’ official channels, not account pools or reverse-engineered endpoints. Rates start at 29% of the providers’ list prices. Track usage in real time and see exactly what you spend to keep costs down.
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">💡 <b>Rates from 29% of list price</b></td>
+    <td align="center" width="50%">📊 Real-time usage tracking</td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="https://www.deepsiderapi.com/?utm_source=antigravity-proxy"><b>👉 Get started with deepsiderapi</b></a>
+    </td>
+  </tr>
+</table>
+
 ## Installation
 
 ### Option 1: Antigravity IDE Marketplace (recommended)
