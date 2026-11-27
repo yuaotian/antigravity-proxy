@@ -210,11 +210,56 @@ bool TestConcurrentProcessHeapContention() {
     return true;
 }
 
+bool TestShortLivedThreadChurn() {
+    std::atomic<bool> stop{false};
+    volatile Fn_t call0 = &TargetFn0;
+
+    CHECK_STATUS(MH_Initialize(), MH_OK, "churn MH_Initialize");
+
+    // 持续制造高频创建并立刻退出的短命线程，验证 CollectAndSuspendOtherThreads 不会因
+    // 挂起已退出线程而毒化整笔 Detours 事务。
+    std::thread spawner([&]() {
+        while (!stop.load(std::memory_order_relaxed)) {
+            std::thread burst[4];
+            for (int i = 0; i < 4; ++i) {
+                burst[i] = std::thread([]() {});
+            }
+            for (int i = 0; i < 4; ++i) {
+                burst[i].join();
+            }
+        }
+    });
+
+    bool ok = true;
+    for (int round = 0; round < 15; ++round) {
+        if (MH_CreateHook(reinterpret_cast<LPVOID>(&TargetFn0),
+                          reinterpret_cast<LPVOID>(&DetourFn0),
+                          reinterpret_cast<LPVOID*>(&g_orig0)) != MH_OK ||
+            MH_CreateHook(reinterpret_cast<LPVOID>(&TargetFn1),
+                          reinterpret_cast<LPVOID>(&DetourFn1),
+                          reinterpret_cast<LPVOID*>(&g_orig1)) != MH_OK ||
+            MH_EnableHook(MH_ALL_HOOKS) != MH_OK ||
+            call0(2, 3) != 1005 ||
+            MH_RemoveHook(reinterpret_cast<LPVOID>(&TargetFn1)) != MH_OK ||
+            MH_RemoveHook(reinterpret_cast<LPVOID>(&TargetFn0)) != MH_OK) {
+            ok = false;
+            break;
+        }
+    }
+
+    stop.store(true, std::memory_order_relaxed);
+    spawner.join();
+    CHECK_STATUS(MH_Uninitialize(), MH_OK, "churn MH_Uninitialize");
+    CHECK_TRUE(ok, "15 rounds under short-lived thread churn");
+    return true;
+}
+
 }  // namespace
 
 int main() {
     if (!TestLifecycleAndBatchSemantics()) return 1;
     if (!TestConcurrentProcessHeapContention()) return 1;
+    if (!TestShortLivedThreadChurn()) return 1;
     std::printf("[PASS] hook_engine_tests all passed.\n");
     return 0;
 }

@@ -160,12 +160,13 @@ private:
     size_t cap_ = 0;
 };
 
-// 先枚举并打开同进程其它线程句柄（此时尚未挂起任何线程），再交由 DetourUpdateThread 逐一挂起
-void CollectAndSuspendOtherThreads(ScopedThreadHandles& out) noexcept {
+// 先枚举并打开同进程其它线程句柄（此时尚未挂起任何线程），再交由 DetourUpdateThread 逐一挂起。
+// 返回 false 表示某线程在枚举与挂起之间恰好退出导致 Detours 事务被标记失败，调用方应中止事务并重试。
+bool CollectAndSuspendOtherThreads(ScopedThreadHandles& out) noexcept {
     const DWORD pid = GetCurrentProcessId();
     const DWORD tid = GetCurrentThreadId();
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-    if (snap == INVALID_HANDLE_VALUE) return;
+    if (snap == INVALID_HANDLE_VALUE) return true;
 
     THREADENTRY32 te{};
     te.dwSize = sizeof(te);
@@ -175,7 +176,7 @@ void CollectAndSuspendOtherThreads(ScopedThreadHandles& out) noexcept {
                                  sizeof(te.th32OwnerProcessID) &&
                 te.th32OwnerProcessID == pid && te.th32ThreadID != tid) {
                 HANDLE hThread = OpenThread(
-                    THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_SET_CONTEXT,
+                    THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | SYNCHRONIZE,
                     FALSE, te.th32ThreadID);
                 if (hThread) {
                     if (!out.PushBeforeSuspend(hThread)) {
@@ -191,11 +192,20 @@ void CollectAndSuspendOtherThreads(ScopedThreadHandles& out) noexcept {
     // 枚举完毕后再统一挂起；DetourThread 节点从 Detours 独立事务私有堆分配，不触碰进程默认堆
     for (size_t i = 0; i < out.Count(); ++i) {
         HANDLE hThread = out.At(i);
-        if (hThread && DetourUpdateThread(hThread) != NO_ERROR) {
+        if (!hThread) continue;
+        // 线程已退出时直接跳过，避免 DetourUpdateThread 因 SuspendThread 失败而毒化整笔事务
+        if (WaitForSingleObject(hThread, 0) == WAIT_OBJECT_0) {
             CloseHandle(hThread);
             out.ClearAt(i);
+            continue;
+        }
+        if (DetourUpdateThread(hThread) != NO_ERROR) {
+            CloseHandle(hThread);
+            out.ClearAt(i);
+            return false;
         }
     }
+    return true;
 }
 
 // 在单个 Detours 事务内批量完成首次挂载并启用
@@ -217,6 +227,8 @@ MH_STATUS AttachAndEnableBatch(const size_t* indices, size_t count) noexcept {
     }
 
     MH_STATUS result = MH_OK;
+    constexpr int kMaxSuspendRetries = 8;
+    int suspendRetries = 0;
 
     for (;;) {
         size_t activeCount = 0;
@@ -247,10 +259,8 @@ MH_STATUS AttachAndEnableBatch(const size_t* indices, size_t count) noexcept {
                                              : MH_ERROR_UNSUPPORTED_FUNCTION;
                 h.attachFailed = true;
                 slots[i].skipped = true;
-                if (count == 1) {
-                    result = mapped;
-                } else {
-                    result = mapped;
+                result = mapped;
+                if (count > 1) {
                     needRetry = true;
                 }
                 break;
@@ -260,32 +270,42 @@ MH_STATUS AttachAndEnableBatch(const size_t* indices, size_t count) noexcept {
         if (needRetry) continue;
         if (err != NO_ERROR) break;
 
-        ScopedThreadHandles threads(g_hHeap);
-        CollectAndSuspendOtherThreads(threads);
-
-        // 所有其它线程已挂起，且 Commit 会在恢复线程前刷新目标函数与 trampoline 指令缓存
-        for (size_t i = 0; i < count; ++i) {
-            if (slots[i].skipped) continue;
-            HookEntry& h = g_hooks[slots[i].hookIdx];
-            if (slots[i].realTramp) {
-                h.callerStub->dest.store(reinterpret_cast<ULONG_PTR>(slots[i].realTramp),
-                                         std::memory_order_release);
+        {
+            ScopedThreadHandles threads(g_hHeap);
+            if (!CollectAndSuspendOtherThreads(threads)) {
+                // 在修改 callerStub/gate 前先中止并恢复其它线程，保证窗口期 *ppOriginal 仍直指原函数
+                DetourTransactionAbort();
+                if (++suspendRetries < kMaxSuspendRetries) {
+                    continue;
+                }
+                result = MH_UNKNOWN;
+                break;
             }
-            h.gate->dest.store(reinterpret_cast<ULONG_PTR>(h.detour), std::memory_order_release);
-        }
 
-        err = DetourTransactionCommit();
-        if (err != NO_ERROR) {
+            // 所有其它线程已挂起，且 Commit 会在恢复线程前刷新目标函数与 trampoline 指令缓存
             for (size_t i = 0; i < count; ++i) {
                 if (slots[i].skipped) continue;
                 HookEntry& h = g_hooks[slots[i].hookIdx];
-                h.callerStub->dest.store(reinterpret_cast<ULONG_PTR>(h.target),
-                                         std::memory_order_release);
-                h.gate->dest.store(reinterpret_cast<ULONG_PTR>(h.target),
-                                   std::memory_order_release);
+                if (slots[i].realTramp) {
+                    h.callerStub->dest.store(reinterpret_cast<ULONG_PTR>(slots[i].realTramp),
+                                             std::memory_order_release);
+                }
+                h.gate->dest.store(reinterpret_cast<ULONG_PTR>(h.detour), std::memory_order_release);
             }
-            result = MH_ERROR_MEMORY_PROTECT;
-            break;
+
+            err = DetourTransactionCommit();
+            if (err != NO_ERROR) {
+                for (size_t i = 0; i < count; ++i) {
+                    if (slots[i].skipped) continue;
+                    HookEntry& h = g_hooks[slots[i].hookIdx];
+                    h.callerStub->dest.store(reinterpret_cast<ULONG_PTR>(h.target),
+                                             std::memory_order_release);
+                    h.gate->dest.store(reinterpret_cast<ULONG_PTR>(h.target),
+                                       std::memory_order_release);
+                }
+                result = MH_ERROR_MEMORY_PROTECT;
+                break;
+            }
         }
 
         for (size_t i = 0; i < count; ++i) {
@@ -329,23 +349,46 @@ MH_STATUS WINAPI MH_Uninitialize(VOID) {
         if (h.attached) anyAttached = true;
     }
 
-    if (anyAttached && DetourTransactionBegin() == NO_ERROR) {
-        for (size_t i = 0; i < g_hookCount; ++i) {
-            HookEntry& h = g_hooks[i];
-            if (!h.attached) continue;
-            PVOID tramp = h.trampoline;
-            DetourDetach(&tramp, h.gate);
-        }
-        ScopedThreadHandles threads(g_hHeap);
-        CollectAndSuspendOtherThreads(threads);
-        for (size_t i = 0; i < g_hookCount; ++i) {
-            HookEntry& h = g_hooks[i];
-            if (h.attached) {
-                h.callerStub->dest.store(reinterpret_cast<ULONG_PTR>(h.target),
-                                         std::memory_order_release);
+    if (anyAttached) {
+        constexpr int kMaxSuspendRetries = 8;
+        for (int attempt = 0; attempt < kMaxSuspendRetries; ++attempt) {
+            if (DetourTransactionBegin() != NO_ERROR) break;
+            LONG err = NO_ERROR;
+            for (size_t i = 0; i < g_hookCount; ++i) {
+                HookEntry& h = g_hooks[i];
+                if (!h.attached) continue;
+                PVOID tramp = h.trampoline;
+                err = DetourDetach(&tramp, h.gate);
+                if (err != NO_ERROR) break;
             }
+            if (err != NO_ERROR) {
+                DetourTransactionAbort();
+                break;
+            }
+            ScopedThreadHandles threads(g_hHeap);
+            if (!CollectAndSuspendOtherThreads(threads)) {
+                DetourTransactionAbort();
+                continue;
+            }
+            for (size_t i = 0; i < g_hookCount; ++i) {
+                HookEntry& h = g_hooks[i];
+                if (h.attached) {
+                    h.callerStub->dest.store(reinterpret_cast<ULONG_PTR>(h.target),
+                                             std::memory_order_release);
+                }
+            }
+            if (DetourTransactionCommit() != NO_ERROR) {
+                // Commit 失败则目标仍带补丁，复位 callerStub 指向 trampoline 避免误触发循环跳转
+                for (size_t i = 0; i < g_hookCount; ++i) {
+                    HookEntry& h = g_hooks[i];
+                    if (h.attached && h.trampoline) {
+                        h.callerStub->dest.store(reinterpret_cast<ULONG_PTR>(h.trampoline),
+                                                 std::memory_order_release);
+                    }
+                }
+            }
+            break;
         }
-        DetourTransactionCommit();
     }
 
     // 闸门/trampoline 可执行页故意保留不释放，防止极小概率仍有线程停留在跳板指令上
@@ -412,17 +455,32 @@ MH_STATUS WINAPI MH_RemoveHook(LPVOID pTarget) {
     HookEntry& h = g_hooks[idx];
     if (h.enabled) SetGate(h, false);
     if (h.attached) {
-        if (DetourTransactionBegin() == NO_ERROR) {
+        bool detached = false;
+        constexpr int kMaxSuspendRetries = 8;
+        for (int attempt = 0; attempt < kMaxSuspendRetries; ++attempt) {
+            if (DetourTransactionBegin() != NO_ERROR) break;
             PVOID tramp = h.trampoline;
-            if (DetourDetach(&tramp, h.gate) == NO_ERROR) {
-                ScopedThreadHandles threads(g_hHeap);
-                CollectAndSuspendOtherThreads(threads);
-                h.callerStub->dest.store(reinterpret_cast<ULONG_PTR>(h.target),
-                                         std::memory_order_release);
-                DetourTransactionCommit();
-            } else {
+            if (DetourDetach(&tramp, h.gate) != NO_ERROR) {
                 DetourTransactionAbort();
+                break;
             }
+            ScopedThreadHandles threads(g_hHeap);
+            if (!CollectAndSuspendOtherThreads(threads)) {
+                DetourTransactionAbort();
+                continue;
+            }
+            h.callerStub->dest.store(reinterpret_cast<ULONG_PTR>(h.target),
+                                     std::memory_order_release);
+            if (DetourTransactionCommit() == NO_ERROR) {
+                detached = true;
+            } else if (h.trampoline) {
+                h.callerStub->dest.store(reinterpret_cast<ULONG_PTR>(h.trampoline),
+                                         std::memory_order_release);
+            }
+            break;
+        }
+        if (!detached) {
+            return MH_ERROR_MEMORY_PROTECT;
         }
     }
 
