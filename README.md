@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/yuaotian/antigravity-proxy/actions"><img src="https://github.com/yuaotian/antigravity-proxy/actions/workflows/build.yml/badge.svg" alt="Build Status"/></a>
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="License"/></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg" alt="Platform"/>
+  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64%20%7C%20arm64-lightgrey.svg" alt="Platform"/>
 </p>
 
 <p align="center">
@@ -94,7 +94,7 @@ Antigravity-Proxy 是一个放进 Antigravity 安装目录即可生效的代理�
 
 ### 方式一：Antigravity IDE 插件市场（推荐）
 
-Antigravity IDE 用户优先从 Open VSX 安装插件：
+Antigravity IDE（**x64**）用户优先从 Open VSX 安装插件：
 
 - [Open VSX 市场页面](https://open-vsx.org/extension/yuaotian/antigravity-proxy)
 - 在 IDE 扩展视图搜索 `Antigravity Proxy`，或执行：
@@ -104,6 +104,8 @@ Antigravity IDE 用户优先从 Open VSX 安装插件：
 ```
 
 安装后执行 `Reload Window`。插件首次启动会自动补齐 `version.dll`；如果市场搜索不到，按「Antigravity IDE 插件」一节的 VSIX / 命令行兜底；仍然不行再用下面的在线安装脚本。
+
+> **选包提示**：Open VSX 市场当前分发的是 **x64** 版 VSIX；原生 **Windows ARM64** 或 32 位 **x86** 版 Antigravity IDE 请勿直接用市场包覆盖补丁，请改用「方式二」在线安装脚本，或从 [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) 下载对应架构的 `*-ide-extension-win-arm64.vsix` / `*-win-x86.vsix`（插件恢复 `version.dll` 前也会核对主程序架构，架构不匹配时会拒绝写入）。
 
 ### 方式二：在线安装脚本（桌面版 / CLI / 插件兜底）
 
@@ -131,13 +133,13 @@ Antigravity IDE 用户优先从 Open VSX 安装插件：
 
 ### 方式三：下载发布包
 
-从 [Releases](https://github.com/yuaotian/antigravity-proxy/releases) 下载（32 位程序选 `x86`）：
+从 [Releases](https://github.com/yuaotian/antigravity-proxy/releases) 按**目标程序架构**下载对应发布包（64 位 x64 选 `x64`，32 位选 `x86`，Windows on ARM64 原生程序选 `arm64`；`arm64` 包内置 Microsoft Detours 的 MIT 许可证 `THIRD_PARTY_DETOURS_LICENSE.md`）：
 
 | 文件 | 适用 |
 |:--|:--|
-| `antigravity-proxy-vX-ide-win-x64.zip` | Antigravity IDE（`Antigravity IDE.exe`）、Antigravity 桌面版（`Antigravity.exe`） |
-| `antigravity-proxy-vX-cli-win-x64.zip` | Antigravity CLI（`agy.exe`） |
-| `antigravity-proxy-vX-ide-extension-win-x64.vsix` | IDE 配套插件（IDE 包的 `ide/` 里已包含） |
+| `antigravity-proxy-vX-ide-win-<arch>.zip` | Antigravity IDE（`Antigravity IDE.exe`）、Antigravity 桌面版（`Antigravity.exe`） |
+| `antigravity-proxy-vX-cli-win-<arch>.zip` | Antigravity CLI（`agy.exe`） |
+| `antigravity-proxy-vX-ide-extension-win-<arch>.vsix` | IDE 配套插件（`x64` / `x86` / `arm64` 各自携带同架构 `version.dll`，IDE 包的 `ide/` 里已包含） |
 | `SHA256SUMS.txt` | 校验清单 |
 
 **请解压到安装目录之外**（例如 `%LOCALAPPDATA%\antigravity-proxy\`），日后修复补丁时要用到这份文件。然后任选一种：
@@ -178,9 +180,9 @@ Antigravity IDE 用户优先从 Open VSX 安装插件：
 
 安装后执行 `Reload Window`；插件首次启动会自动补齐 `version.dll`。
 
-**如果搜索不到 / 安装失败**：
+**如果搜索不到 / 安装失败（或使用原生 ARM64 / x86 IDE）**：
 
-1. 从 [Open VSX 页面](https://open-vsx.org/extension/yuaotian/antigravity-proxy) 或 [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) 下载 VSIX；
+1. 从 [Open VSX 页面](https://open-vsx.org/extension/yuaotian/antigravity-proxy)（仅 `x64`）或 [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases)（`win-x64` / `win-x86` / `win-arm64`）下载对应架构的 VSIX；
 2. 扩展视图右上角 `…` → 「从 VSIX 安装」；或：
 
 ```powershell
@@ -281,7 +283,7 @@ Antigravity 自动更新可能会删除安装目录里的补丁文件：
 
 | 错误 | 处理 |
 |:--|:--|
-| `0xC0000142` / `0xC000007B` | 补丁与程序架构不一致（x86 / x64），换对应版本；或缺少运行库，安装 [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
+| `0xC0000142` / `0xC000007B` | 补丁与程序架构不一致（x86 / x64 / arm64），换对应版本；或缺少运行库，安装 [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
 | `0xC0000135` / 缺少 `VCRUNTIME140_1.dll` | 安装上面的运行库合集 |
 | `0xC0000906` | 被安全软件拦截，把安装目录加入白名单 |
 | 日志里 `10061` / `10060` | 代理软件未启动或端口错误 / 连接超时；日志提示「可能是 HTTP 代理端口」/「可能是 SOCKS5 端口」时改 `proxy.type` |
@@ -309,7 +311,7 @@ Antigravity 自动更新可能会删除安装目录里的补丁文件：
 
 ## 许可证
 
-[BSD-2-Clause](LICENSE.txt)。MinHook 部分版权归 Tsuda Kageyu 所有（`AUTHORS.txt` 为 MinHook 作者名单）。
+[BSD-2-Clause](LICENSE.txt)。MinHook 部分版权归 Tsuda Kageyu 所有（`AUTHORS.txt` 为 MinHook 作者名单）；Windows ARM64 Hook 适配基于 [Microsoft Detours](third_party/detours/LICENSE.md)（MIT）。
 
 ## 关于作者
 

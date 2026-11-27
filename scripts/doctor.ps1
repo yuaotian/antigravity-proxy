@@ -869,7 +869,7 @@ function Test-PatchFiles {
         if ($exeArch -ne "缺失" -and $dllArch -ne $exeArch) {
             Add-Finding -Level "Fail" -Code "ArchMismatch" `
                 -Message ("架构不匹配: 主程序 {0}，{1} 为 {2}。" -f $exeArch, $file, $dllArch) `
-                -Hint "x64 主程序必须配 x64 补丁，重新下载对应架构的发布包。"
+                -Hint ("{0} 主程序必须配 {0} 补丁，重新下载对应架构的发布包。" -f $exeArch)
             Add-Verdict "补丁与主程序架构不一致，先换成同架构发布包。"
         } else {
             Add-Finding -Level "Pass" -Code "ArchMatched" `

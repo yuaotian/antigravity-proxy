@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/yuaotian/antigravity-proxy/actions"><img src="https://github.com/yuaotian/antigravity-proxy/actions/workflows/build.yml/badge.svg" alt="Статус сборки"/></a>
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="Лицензия"/></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64-lightgrey.svg" alt="Платформа"/>
+  <img src="https://img.shields.io/badge/platform-Windows%20x86%20%7C%20x64%20%7C%20arm64-lightgrey.svg" alt="Платформа"/>
 </p>
 
 <p align="center">
@@ -92,7 +92,7 @@ Antigravity-Proxy — это патч прокси (DLL), который нач�
 
 ### Способ 1: маркетплейс Antigravity IDE (рекомендуется)
 
-Для Antigravity IDE сначала установите расширение из Open VSX:
+Для **x64** Antigravity IDE сначала установите расширение из Open VSX:
 
 - [Страница Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy)
 - Найдите `Antigravity Proxy` в представлении расширений или выполните:
@@ -102,6 +102,8 @@ Antigravity-Proxy — это патч прокси (DLL), который нач�
 ```
 
 После установки выполните `Reload Window`. При первом запуске расширение восстановит `version.dll`. Если поиск в маркетплейсе не находит расширение, используйте VSIX / командную строку из раздела «Расширение для Antigravity IDE»; если не поможет — онлайн-скрипт ниже.
+
+> **Выбор архитектуры**: в маркетплейсе Open VSX сейчас публикуется только пакет **x64**. Для нативной **Windows ARM64** или 32-разрядной **x86** версии Antigravity IDE используйте Способ 2 (онлайн-скрипт) или скачайте `*-ide-extension-win-arm64.vsix` / `*-win-x86.vsix` из [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) (перед восстановлением `version.dll` расширение проверяет архитектуру исполняемого файла и блокирует несовместимую запись).
 
 ### Способ 2: онлайн-скрипт установки (desktop / CLI / резерв для расширения)
 
@@ -129,13 +131,13 @@ Antigravity-Proxy — это патч прокси (DLL), который нач�
 
 ### Способ 3: скачать пакет релиза
 
-Скачайте из [Releases](https://github.com/yuaotian/antigravity-proxy/releases) (для 32-разрядных программ выбирайте `x86`):
+Скачайте из [Releases](https://github.com/yuaotian/antigravity-proxy/releases) пакет, соответствующий **архитектуре целевой программы** (`x64` для 64-разрядной x64, `x86` для 32-разрядных программ, `arm64` для нативной Windows на ARM64; пакеты `arm64` также включают MIT-лицензию Microsoft Detours в файле `THIRD_PARTY_DETOURS_LICENSE.md`):
 
 | Файл | Для чего |
 |:--|:--|
-| `antigravity-proxy-vX-ide-win-x64.zip` | Antigravity IDE (`Antigravity IDE.exe`), Antigravity, настольная версия (`Antigravity.exe`) |
-| `antigravity-proxy-vX-cli-win-x64.zip` | Antigravity CLI (`agy.exe`) |
-| `antigravity-proxy-vX-ide-extension-win-x64.vsix` | Расширение для IDE (уже есть в `ide/` пакета для IDE) |
+| `antigravity-proxy-vX-ide-win-<arch>.zip` | Antigravity IDE (`Antigravity IDE.exe`), Antigravity, настольная версия (`Antigravity.exe`) |
+| `antigravity-proxy-vX-cli-win-<arch>.zip` | Antigravity CLI (`agy.exe`) |
+| `antigravity-proxy-vX-ide-extension-win-<arch>.vsix` | Расширение для IDE (`x64` / `x86` / `arm64` со встроенным `version.dll` нужной архитектуры; уже есть в `ide/` пакета для IDE) |
 | `SHA256SUMS.txt` | Контрольные суммы |
 
 **Распакуйте вне каталога установки** (например, в `%LOCALAPPDATA%\antigravity-proxy\`): эти файлы понадобятся позже для восстановления патча. Затем выберите любой вариант:
@@ -176,9 +178,9 @@ Antigravity-Proxy — это патч прокси (DLL), который нач�
 
 После установки выполните `Reload Window`; при первом запуске расширение восстановит `version.dll`.
 
-**Если поиск не находит / установка не удалась:**
+**Если поиск не находит / установка не удалась (или используется нативная ARM64 / x86 IDE):**
 
-1. Скачайте VSIX со [страницы Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy) или из [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases);
+1. Скачайте VSIX для своей архитектуры со [страницы Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy) (только `x64`) или из [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) (`win-x64` / `win-x86` / `win-arm64`);
 2. Представление «Расширения» → `…` → «Установить из VSIX…»; или:
 
 ```powershell
@@ -279,7 +281,7 @@ Invoke-WebRequest "https://open-vsx.org/api/yuaotian/antigravity-proxy/2.6.3/fil
 
 | Ошибка | Решение |
 |:--|:--|
-| `0xC0000142` / `0xC000007B` | Архитектура патча не совпадает с программой (x86 / x64) — возьмите подходящую версию; либо не хватает библиотек времени выполнения — установите набор библиотек времени выполнения Microsoft [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
+| `0xC0000142` / `0xC000007B` | Архитектура патча не совпадает с программой (x86 / x64 / arm64) — возьмите подходящую версию; либо не хватает библиотек времени выполнения — установите набор библиотек времени выполнения Microsoft [`microsoft/微软常用运行库合集-2025.exe`](microsoft/微软常用运行库合集-2025.exe) |
 | `0xC0000135` / нет `VCRUNTIME140_1.dll` | Установите набор библиотек, указанный выше |
 | `0xC0000906` | Заблокировано защитным ПО — добавьте каталог установки в исключения |
 | `10061` / `10060` в журнале | Прокси-клиент не запущен или неверный порт / истекло время ожидания подключения; если журнал сообщает, что порт похож на HTTP или SOCKS5, измените `proxy.type` |
@@ -307,7 +309,7 @@ Invoke-WebRequest "https://open-vsx.org/api/yuaotian/antigravity-proxy/2.6.3/fil
 
 ## Лицензия
 
-[BSD-2-Clause](LICENSE.txt). Авторские права на часть MinHook принадлежат Tsuda Kageyu (`AUTHORS.txt` — список авторов MinHook).
+[BSD-2-Clause](LICENSE.txt). Авторские права на часть MinHook принадлежат Tsuda Kageyu (`AUTHORS.txt` — список авторов MinHook); перехват для Windows ARM64 использует [Microsoft Detours](third_party/detours/LICENSE.md) (MIT).
 
 ## Об авторе
 

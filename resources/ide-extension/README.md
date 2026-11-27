@@ -18,7 +18,7 @@ launcher and writes (JetBrains) or copies (Zed / VS Code) the agent config so th
 
 ## Install
 
-### From Open VSX (recommended)
+### From Open VSX (recommended for x64)
 
 Open [Antigravity Proxy on Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy), or run:
 
@@ -26,13 +26,15 @@ Open [Antigravity Proxy on Open VSX](https://open-vsx.org/extension/yuaotian/ant
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension yuaotian.antigravity-proxy
 ```
 
+> **Windows ARM64 / x86 note**: Open VSX distributes the **x64** package only. Native Windows ARM64 or 32-bit x86 Antigravity IDE users should install `antigravity-proxy-vX-ide-extension-win-arm64.vsix` (or `win-x86.vsix`) from [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) — the extension verifies executable architecture before writing `version.dll`.
+
 If the IDE search index has not caught up yet, download the VSIX from the Open VSX page and use
 **Extensions → … → Install from VSIX**.
 
 ### From VSIX
 
-Download `antigravity-proxy-2.6.3.vsix` from [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases)
-or the Open VSX page, then:
+Download the VSIX matching your IDE architecture (`win-x64`, `win-x86`, or `win-arm64`) from
+[GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) or the Open VSX page (`x64` only), then:
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension .\antigravity-proxy-2.6.3.vsix --force
@@ -49,13 +51,15 @@ Reload the IDE window after installation.
 `agy acp` 与 ACP Registry 版 `agy_acp_server.exe`，部署 `agy-acp-proxy.exe` 并一键写入（JetBrains）或复制（Zed / VS Code）
 Agent 配置，让这些编辑器里的 Antigravity 也走代理，全程无需终端。
 
-**安装（Open VSX）：**
+**安装（Open VSX · 仅 x64）：**
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension yuaotian.antigravity-proxy
 ```
 
-也可以打开 [Open VSX 页面](https://open-vsx.org/extension/yuaotian/antigravity-proxy) 下载 VSIX，在扩展视图右上角
+> **选包提示**：Open VSX 仅分发 **x64** 包。原生 **Windows ARM64** 或 **x86** 版 Antigravity IDE 请勿直接安装市场包，请从 [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) 下载对应架构的 `*-ide-extension-win-arm64.vsix` / `*-win-x86.vsix`（插件恢复 `version.dll` 前会校验目标主程序架构，不匹配会拒绝写入）。
+
+也可以打开 [Open VSX 页面](https://open-vsx.org/extension/yuaotian/antigravity-proxy)（`x64`）或 [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) 下载对应架构的 VSIX，在扩展视图右上角
 `…` → 「从 VSIX 安装」。安装后执行 `Reload Window`。
 
 ## Русский
@@ -68,13 +72,15 @@ Agent 配置，让这些编辑器里的 Antigravity 也走代理，全程无需�
 на боковой панели: расширение найдёт `agy acp` / `agy_acp_server.exe` из ACP Registry, развернёт обёртку
 `agy-acp-proxy.exe` и запишет (JetBrains) или скопирует (Zed / VS Code) настройки агента, чтобы он тоже шёл через прокси.
 
-**Установка из Open VSX:**
+**Установка из Open VSX (только x64):**
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension yuaotian.antigravity-proxy
 ```
 
-Либо скачайте VSIX со [страницы Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy) и выберите
+> **Выбор пакета**: в Open VSX публикуется только пакет **x64**. Для нативной **Windows ARM64** или 32-разрядной **x86** Antigravity IDE скачайте `*-ide-extension-win-arm64.vsix` / `*-win-x86.vsix` из [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) — перед записью `version.dll` расширение проверяет архитектуру IDE.
+
+Либо скачайте VSIX для вашей архитектуры со [страницы Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy) (`x64`) или из [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) и выберите
 **Extensions → … → Install from VSIX**. После установки выполните `Reload Window`.
 
 ## Links
@@ -82,4 +88,4 @@ Agent 配置，让这些编辑器里的 Antigravity 也走代理，全程无需�
 - Repository: https://github.com/yuaotian/antigravity-proxy
 - Documentation: https://github.com/yuaotian/antigravity-proxy/blob/main/docs/ide-extension.md
 - Issues: https://github.com/yuaotian/antigravity-proxy/issues
-- License: BSD-2-Clause (see `LICENSE.txt`)
+- License: BSD-2-Clause (see `LICENSE.txt`; `win-arm64` packages also bundle Microsoft Detours under MIT in `THIRD_PARTY_DETOURS_LICENSE.md`)

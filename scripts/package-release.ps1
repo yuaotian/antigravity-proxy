@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
-    [ValidateSet("x64", "x86")]
+    [ValidateSet("x64", "x86", "arm64")]
     [string]$Arch = "x64",
     [string]$OutputDir = "",
     [Parameter(Mandatory = $true)]
@@ -56,6 +56,11 @@ foreach ($doctorFile in $doctorFiles) {
     }
 }
 
+$detoursLicensePath = Join-Path $Root "third_party\detours\LICENSE.md"
+if ($Arch -eq "arm64" -and -not (Test-Path -LiteralPath $detoursLicensePath -PathType Leaf)) {
+    throw "ARM64 发布包缺少 Microsoft Detours 许可证文件: third_party\detours\LICENSE.md"
+}
+
 # 发布前同时校验两套目录，尽早阻断旧文件残留造成的入口混装。
 $forbiddenFiles = @(
     "ide\dbghelp.dll",
@@ -100,11 +105,28 @@ try {
         foreach ($doctorFile in $doctorFiles) {
             Copy-Item -LiteralPath (Join-Path $doctorScriptDir $doctorFile) -Destination $productStage -Force
         }
+        # ARM64 构建使用了 Microsoft Detours (MIT)，随 IDE / CLI 发布包一并附带 MIT 声明
+        if ($Arch -eq "arm64") {
+            Copy-Item -LiteralPath $detoursLicensePath -Destination (Join-Path $productStage "THIRD_PARTY_DETOURS_LICENSE.md") -Force
+        }
         $zipPath = if ($product -eq "ide") { $ideZip } else { $cliZip }
         Compress-Archive -Path (Join-Path $productStage "*") -DestinationPath $zipPath -Force
         Write-Host "[打包] 已生成 $product 产物: $zipPath"
     }
-    Copy-Item -LiteralPath (Join-Path $OutputDir "ide\antigravity-proxy.vsix") -Destination $vsixAsset -Force
+    $vsixSrc = Join-Path $OutputDir "ide\antigravity-proxy.vsix"
+    if ($Arch -eq "arm64") {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $vsixZip = [System.IO.Compression.ZipFile]::OpenRead($vsixSrc)
+        try {
+            $hasDetoursLicense = [bool]($vsixZip.Entries | Where-Object { $_.FullName -eq "extension/THIRD_PARTY_DETOURS_LICENSE.md" } | Select-Object -First 1)
+        } finally {
+            $vsixZip.Dispose()
+        }
+        if (-not $hasDetoursLicense) {
+            throw "ARM64 VSIX 缺少 extension/THIRD_PARTY_DETOURS_LICENSE.md"
+        }
+    }
+    Copy-Item -LiteralPath $vsixSrc -Destination $vsixAsset -Force
     Write-Host "[打包] 已生成 IDE 插件资产: $vsixAsset"
 } finally {
     if (Test-Path -LiteralPath $stagingRoot) {

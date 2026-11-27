@@ -15,7 +15,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { isDllLoadedInThisProcess, statOrNull } = require("./installInfo");
+const { isDllLoadedInThisProcess, statOrNull, readPeArch, KNOWN_EXE_NAMES } = require("./installInfo");
 const { ACP_WRAPPER_NAME } = require("./acpSupport");
 const I18n = require("../media/i18n");
 
@@ -67,6 +67,49 @@ class PatchGuard {
   }
 
   /**
+   * 解析目标 IDE 主程序的 PE 架构；找不到有效主程序（如纯文件测试夹具）时返回 null。
+   * @returns {"x64" | "x86" | "arm64" | "unknown" | null}
+   */
+  resolveTargetArch() {
+    const direct = readPeArch(this.info.exePath);
+    if (direct) return direct;
+    for (const name of KNOWN_EXE_NAMES) {
+      const candidate = readPeArch(path.join(this.info.installDir, name));
+      if (candidate) return candidate;
+    }
+    return null;
+  }
+
+  /**
+   * 写入原生二进制前校验架构是否与目标 IDE 一致（防止 Open VSX 的 x64 VSIX 错写入原生 ARM64 IDE）。
+   * 若主程序路径无法读取 PE 头：纯测试桩 payload（非 PE）继续兼容放行；真实 PE 负载在 Windows 下按 process.arch 保底 fail-closed。
+   * @param {string} payloadFile
+   * @returns {string | null} 不匹配时返回本地化错误提示，匹配或纯测试桩夹具时返回 null
+   */
+  checkPayloadArch(payloadFile) {
+    const payloadArch = readPeArch(payloadFile);
+    let targetArch = this.resolveTargetArch();
+    if (!targetArch) {
+      if (!payloadArch) return null;
+      if (process.platform === "win32") {
+        targetArch = process.arch === "arm64" ? "arm64"
+          : process.arch === "x64" ? "x64"
+          : process.arch === "ia32" ? "x86"
+          : "unknown";
+      } else {
+        return null;
+      }
+    }
+    if (!payloadArch || payloadArch !== targetArch) {
+      return this.t("guard.archMismatch", {
+        payloadArch: payloadArch || "unknown",
+        targetArch,
+      });
+    }
+    return null;
+  }
+
+  /**
    * 部署/更新 ACP 包装器到 IDE 安装目录（内容一致时不重复写入）。
    * 正在被编辑器使用的旧包装器无法覆盖（EBUSY/EPERM），此时返回错误由调用方提示稍后重试。
    * @returns {{ ok: true, changed: boolean, path: string } | { ok: false, error: string }}
@@ -74,6 +117,8 @@ class PatchGuard {
   deployAcpWrapper() {
     const s = this.checkAcpWrapper();
     if (!s.payloadAvailable) return { ok: false, error: this.t("acp.noPayload") };
+    const archError = this.checkPayloadArch(this.payloadAcpWrapper);
+    if (archError) return { ok: false, error: archError };
     if (s.upToDate) return { ok: true, changed: false, path: s.path };
     try {
       atomicCopy(this.payloadAcpWrapper, this.acpWrapperPath, this.t);
@@ -119,6 +164,10 @@ class PatchGuard {
         if (!statOrNull(this.payloadDll)) {
           return { ok: false, restored, error: this.t("guard.noPayload") };
         }
+        const dllArchError = this.checkPayloadArch(this.payloadDll);
+        if (dllArchError) {
+          return { ok: false, restored, error: dllArchError };
+        }
         atomicCopy(this.payloadDll, this.info.dllPath, this.t);
         restored.push(this.t("ext.restoredDll"));
       }
@@ -137,6 +186,10 @@ class PatchGuard {
       }
       // 只恢复用户曾部署过的 ACP 包装器：其它编辑器的 Agent 配置指向这个路径，缺失会导致 Agent 无法启动
       if (this.shouldRestoreAcpWrapper() && !statOrNull(this.acpWrapperPath) && statOrNull(this.payloadAcpWrapper)) {
+        const acpArchError = this.checkPayloadArch(this.payloadAcpWrapper);
+        if (acpArchError) {
+          return { ok: false, restored, error: acpArchError };
+        }
         atomicCopy(this.payloadAcpWrapper, this.acpWrapperPath, this.t);
         restored.push(ACP_WRAPPER_NAME);
       }

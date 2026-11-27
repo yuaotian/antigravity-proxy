@@ -92,7 +92,7 @@ function Assert-NoCode {
 function New-PeStub {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [ValidateSet("x64", "x86")][string]$Arch = "x64",
+        [ValidateSet("x64", "x86", "arm64")][string]$Arch = "x64",
         [int]$Size = 512
     )
     $bytes = New-Object byte[] $Size
@@ -101,6 +101,8 @@ function New-PeStub {
     $bytes[0x80] = 0x50; $bytes[0x81] = 0x45                            # "PE\0\0"
     if ($Arch -eq "x64") {
         $bytes[0x84] = 0x64; $bytes[0x85] = 0x86                        # 0x8664
+    } elseif ($Arch -eq "arm64") {
+        $bytes[0x84] = 0x64; $bytes[0x85] = 0xAA                        # 0xAA64
     } else {
         $bytes[0x84] = 0x4C; $bytes[0x85] = 0x01                        # 0x014C
     }
@@ -141,14 +143,17 @@ Write-Host "== 用例 1: PE 架构识别 ==" -ForegroundColor White
 
 $x64 = Join-Path $script:FixtureRoot "arch-x64.dll"
 $x86 = Join-Path $script:FixtureRoot "arch-x86.dll"
+$arm64 = Join-Path $script:FixtureRoot "arch-arm64.dll"
 $junk = Join-Path $script:FixtureRoot "arch-junk.dll"
 New-Item -ItemType Directory -Path $script:FixtureRoot -Force | Out-Null
 New-PeStub -Path $x64 -Arch "x64"
 New-PeStub -Path $x86 -Arch "x86"
+New-PeStub -Path $arm64 -Arch "arm64"
 [IO.File]::WriteAllText($junk, "not a portable executable at all")
 
 Assert-Equal -Name "x64 桩识别为 x64" -Expected "x64" -Actual (Get-PeArchitecture $x64)
 Assert-Equal -Name "x86 桩识别为 x86" -Expected "x86" -Actual (Get-PeArchitecture $x86)
+Assert-Equal -Name "arm64 桩识别为 ARM64" -Expected "ARM64" -Actual (Get-PeArchitecture $arm64)
 Assert-Equal -Name "非 PE 内容识别为非 PE" -Expected "非 PE" -Actual (Get-PeArchitecture $junk)
 Assert-Equal -Name "缺失文件返回缺失" -Expected "缺失" -Actual (Get-PeArchitecture (Join-Path $script:FixtureRoot "nope.dll"))
 

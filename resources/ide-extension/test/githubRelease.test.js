@@ -47,12 +47,14 @@ test("按 IDE 架构选择 VSIX；未知架构返回 null", () => {
     assets: [
       { name: "antigravity-proxy-v2.6-ide-extension-win-x64.vsix", browser_download_url: "https://github.com/a/x64.vsix" },
       { name: "antigravity-proxy-v2.6-ide-extension-win-x86.vsix", browser_download_url: "https://github.com/a/x86.vsix" },
+      { name: "antigravity-proxy-v2.6-ide-extension-win-arm64.vsix", browser_download_url: "https://github.com/a/arm64.vsix" },
       { name: "antigravity-proxy-v2.6-ide-win-x64.zip", browser_download_url: "https://github.com/a/ide.zip" },
     ],
   });
   assert.equal(R.pickVsixAsset(info.assets, "x64").name, "antigravity-proxy-v2.6-ide-extension-win-x64.vsix");
   assert.equal(R.pickVsixAsset(info.assets, "ia32").name, "antigravity-proxy-v2.6-ide-extension-win-x86.vsix");
-  assert.equal(R.pickVsixAsset(info.assets, "arm64"), null);
+  assert.equal(R.pickVsixAsset(info.assets, "arm64").name, "antigravity-proxy-v2.6-ide-extension-win-arm64.vsix");
+  assert.equal(R.pickVsixAsset(info.assets, "mips"), null);
 });
 
 test("镜像拼接：只接受 https，自动补斜杠，顺序保持配置顺序", () => {
