@@ -836,8 +836,7 @@ if (Test-Path $extSrc) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "LICENSE.txt") -Destination (Join-Path $extRoot "LICENSE.txt") -Force
     if ($Arch -eq "arm64") {
         if (-not (Test-Path -LiteralPath $detoursLicenseSrc -PathType Leaf)) {
-            Write-Error "缺少 Microsoft Detours 许可证文件: $detoursLicenseSrc"
-            exit 1
+            throw "VSIX 缺少 Microsoft Detours 许可证文件: $detoursLicenseSrc"
         }
         Copy-Item -LiteralPath $detoursLicenseSrc -Destination (Join-Path $extRoot "THIRD_PARTY_DETOURS_LICENSE.md") -Force
     }

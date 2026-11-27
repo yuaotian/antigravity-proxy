@@ -273,29 +273,14 @@ jobs:
         "cli_zip_path=$cliZip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         "vsix_path=$vsix" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-    - name: 上传 IDE 打包文件
+    - name: 上传 ARM64 发布产物
       uses: actions/upload-artifact@v7
       with:
-        name: release-asset-ide-arm64
-        path: ${{ steps.package.outputs.ide_zip_path }}
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 1
-
-    - name: 上传 CLI 打包文件
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-asset-cli-arm64
-        path: ${{ steps.package.outputs.cli_zip_path }}
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 1
-
-    - name: 上传 IDE 插件
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-asset-vsix-arm64
-        path: ${{ steps.package.outputs.vsix_path }}
+        name: release-asset-arm64
+        path: |
+          ${{ steps.package.outputs.ide_zip_path }}
+          ${{ steps.package.outputs.cli_zip_path }}
+          ${{ steps.package.outputs.vsix_path }}
         if-no-files-found: error
         compression-level: 0
         retention-days: 1
@@ -334,6 +319,8 @@ jobs:
     name: Publish Release
     runs-on: ubuntu-latest
     needs: [build, build-arm64]
+    # 即使 build-arm64 因超时或异常失败，只要 x64 / x86 build 成功且未被取消，仍照常发布 Release
+    if: ${{ always() && needs.build.result == 'success' && !cancelled() }}
     timeout-minutes: 20
     permissions:
       contents: write

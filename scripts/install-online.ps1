@@ -716,7 +716,11 @@ function Invoke-ExtensionOnlyInstall {
     if (-not $tag) { $script:ExitCode = 3; return }
     $asset = "antigravity-proxy-$tag-ide-extension-win-$arch.vsix"
     if ($script:ReleaseAssets.Count -gt 0 -and $script:ReleaseAssets -notcontains $asset) {
-        Write-Err ((T "ExtAssetMissing") -f $tag)
+        if ($arch -eq "arm64") {
+            Write-Err ((T "AssetMissing") -f $tag, $asset)
+        } else {
+            Write-Err ((T "ExtAssetMissing") -f $tag)
+        }
         $script:ExitCode = 3
         return
     }
