@@ -26,6 +26,11 @@
 
 cmake_minimum_required(VERSION 3.0...3.5)
 
+# 使 CMAKE_MSVC_RUNTIME_LIBRARY 在 CMake 3.15+ 下生效（否则 STATIC_RUNTIME=/MT 会被静默忽略）
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
+
 project(antigravity-proxy LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -39,7 +44,7 @@ if(MSVC)
     if(STATIC_RUNTIME)
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     else()
-        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>")
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
     endif()
     # 统一禁用 windows.h 的 min/max 宏，避免污染 C++ 标准库的 std::min/std::max
     add_compile_definitions(NOMINMAX)
