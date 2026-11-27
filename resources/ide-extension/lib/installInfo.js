@@ -100,4 +100,36 @@ function statOrNull(filePath) {
   }
 }
 
-module.exports = { resolveInstallInfo, isDllLoadedInThisProcess, statOrNull, KNOWN_EXE_NAMES };
+/**
+ * 读取 Windows PE 文件的 COFF Machine 架构（只读 DOS/PE 头，避免把大体积可执行文件全量读入内存）。
+ * @param {string} filePath
+ * @returns {"x64" | "x86" | "arm64" | "unknown" | null} 有效 PE 返回架构；文件不存在或非 PE 返回 null
+ */
+function readPeArch(filePath) {
+  if (!filePath) return null;
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const dos = Buffer.allocUnsafe(64);
+    if (fs.readSync(fd, dos, 0, 64, 0) < 64) return null;
+    if (dos[0] !== 0x4d || dos[1] !== 0x5a) return null; // "MZ"
+    const peOffset = dos.readUInt32LE(0x3c);
+    if (peOffset < 64 || peOffset > 1048576) return null;
+    const pe = Buffer.allocUnsafe(6);
+    if (fs.readSync(fd, pe, 0, 6, peOffset) < 6) return null;
+    if (pe[0] !== 0x50 || pe[1] !== 0x45 || pe[2] !== 0x00 || pe[3] !== 0x00) return null; // "PE\0\0"
+    const machine = pe.readUInt16LE(4);
+    if (machine === 0x8664) return "x64";
+    if (machine === 0x014c) return "x86";
+    if (machine === 0xaa64) return "arm64";
+    return "unknown";
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* 忽略关闭失败 */ }
+    }
+  }
+}
+
+module.exports = { resolveInstallInfo, isDllLoadedInThisProcess, statOrNull, readPeArch, KNOWN_EXE_NAMES };

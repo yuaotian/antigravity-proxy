@@ -10,10 +10,25 @@ const crypto = require("crypto");
 const { execFileSync, spawn } = require("child_process");
 const { PatchGuard } = require("../lib/patchGuard.js");
 const { ConfigStore } = require("../lib/configStore.js");
-const { isDllLoadedInThisProcess } = require("../lib/installInfo.js");
+const { isDllLoadedInThisProcess, readPeArch } = require("../lib/installInfo.js");
+const { ACP_WRAPPER_NAME } = require("../lib/acpSupport.js");
+const I18n = require("../media/i18n.js");
 const { buildRelauncherScript, buildLauncherScript, runLauncher, sanitizeEnv, ARGS_ENV } = require("../lib/restart.js");
 
 const sha = (p) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+
+/** 构造最小合法 PE 头（DOS "MZ" + e_lfanew + "PE\0\0" + Machine），用于架构识别与跨架构拦截测试 */
+function makePeStub(arch) {
+  const machine = arch === "x64" ? 0x8664 : arch === "x86" ? 0x014c : arch === "arm64" ? 0xaa64 : 0x0200;
+  const buf = Buffer.alloc(0x90);
+  buf[0] = 0x4d;
+  buf[1] = 0x5a; // "MZ"
+  buf.writeUInt32LE(0x80, 0x3c);
+  buf[0x80] = 0x50;
+  buf[0x81] = 0x45; // "PE\0\0"
+  buf.writeUInt16LE(machine, 0x84);
+  return buf;
+}
 
 // 本文件创建的临时目录，全部用例结束后统一清理，避免每次构建在 %TEMP% 留下残留
 /** @type {string[]} */
@@ -153,4 +168,87 @@ test("重启器外层：抓取主进程参数（剔除 --open-url）并经环境
   } finally {
     fakeMain.kill();
   }
+});
+
+/** 构造带 PE 主程序桩与负载架构的安装环境 */
+function archFixture({ exeArch, dllArch, acpArch, lang = "zh-cn", restoreAcp = false }) {
+  const root = mkTmp("agp-arch-");
+  const installDir = path.join(root, "install");
+  const extDir = path.join(root, "ext");
+  const storage = path.join(root, "storage");
+  fs.mkdirSync(installDir);
+  fs.mkdirSync(path.join(extDir, "payload"), { recursive: true });
+  const exePath = path.join(installDir, "Antigravity IDE.exe");
+  if (exeArch) fs.writeFileSync(exePath, makePeStub(exeArch));
+  if (dllArch) fs.writeFileSync(path.join(extDir, "payload", "version.dll"), makePeStub(dllArch));
+  fs.writeFileSync(path.join(extDir, "payload", "config.json"), JSON.stringify({ proxy: { port: 7890 } }));
+  if (acpArch) fs.writeFileSync(path.join(extDir, "payload", ACP_WRAPPER_NAME), makePeStub(acpArch));
+  const info = {
+    supported: true,
+    installDir,
+    exePath,
+    dllPath: path.join(installDir, "version.dll"),
+    configPath: path.join(installDir, "config.json"),
+    logsDir: path.join(installDir, "logs"),
+  };
+  const store = new ConfigStore(info.configPath, storage);
+  const guard = new PatchGuard(info, store, extDir, I18n.createT(lang), {
+    shouldRestoreAcpWrapper: () => restoreAcp,
+  });
+  return { info, guard, extDir };
+}
+
+test("readPeArch：准确识别 x64 / x86 / arm64 / unknown，非 PE 或缺失返回 null", () => {
+  const dir = mkTmp("agp-pe-");
+  for (const arch of ["x64", "x86", "arm64", "unknown"]) {
+    const p = path.join(dir, `${arch}.bin`);
+    fs.writeFileSync(p, makePeStub(arch));
+    assert.equal(readPeArch(p), arch);
+  }
+  const junk = path.join(dir, "junk.dll");
+  fs.writeFileSync(junk, "not-a-pe");
+  assert.equal(readPeArch(junk), null);
+  assert.equal(readPeArch(path.join(dir, "missing.exe")), null);
+});
+
+test("架构校验：Open VSX 的 x64 插件包不得向原生 ARM64 IDE 写入 version.dll", () => {
+  const f = archFixture({ exeArch: "arm64", dllArch: "x64", lang: "zh-cn" });
+  const r = f.guard.restore();
+  assert.equal(r.ok, false);
+  assert.match(r.error, /x64/);
+  assert.match(r.error, /arm64/);
+  assert.equal(fs.existsSync(f.info.dllPath), false);
+  assert.deepEqual(fs.readdirSync(f.info.installDir).filter((n) => n.endsWith(".tmp")), []);
+});
+
+test("架构校验：x86 插件包不得向 x64 IDE 写入 version.dll", () => {
+  const f = archFixture({ exeArch: "x64", dllArch: "x86", lang: "en" });
+  const r = f.guard.restore();
+  assert.equal(r.ok, false);
+  assert.match(r.error, /x86/);
+  assert.match(r.error, /x64/);
+  assert.equal(fs.existsSync(f.info.dllPath), false);
+});
+
+test("架构校验：ARM64 插件包与原生 ARM64 IDE 架构一致时正常恢复 version.dll", () => {
+  const f = archFixture({ exeArch: "arm64", dllArch: "arm64", acpArch: "arm64" });
+  const r = f.guard.restore();
+  assert.equal(r.ok, true, r.error);
+  assert.equal(sha(f.info.dllPath), sha(path.join(f.extDir, "payload", "version.dll")));
+});
+
+test("架构校验：deployAcpWrapper 与 restore 均拦截错架构 agy-acp-proxy.exe", () => {
+  const f = archFixture({ exeArch: "arm64", dllArch: "arm64", acpArch: "x64", lang: "ru", restoreAcp: true });
+  const deployRes = f.guard.deployAcpWrapper();
+  assert.equal(deployRes.ok, false);
+  assert.match(/** @type {any} */ (deployRes).error, /x64/);
+  assert.match(/** @type {any} */ (deployRes).error, /arm64/);
+  assert.equal(fs.existsSync(f.guard.acpWrapperPath), false);
+
+  // 即使 version.dll 与目标架构匹配，恢复 ACP 包装器前同样校验架构
+  fs.writeFileSync(f.info.dllPath, makePeStub("arm64"));
+  const restoreRes = f.guard.restore();
+  assert.equal(restoreRes.ok, false);
+  assert.match(restoreRes.error, /x64/);
+  assert.equal(fs.existsSync(f.guard.acpWrapperPath), false);
 });
