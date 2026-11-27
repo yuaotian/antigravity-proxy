@@ -82,13 +82,24 @@ class PatchGuard {
 
   /**
    * 写入原生二进制前校验架构是否与目标 IDE 一致（防止 Open VSX 的 x64 VSIX 错写入原生 ARM64 IDE）。
+   * 若主程序路径无法读取 PE 头：纯测试桩 payload（非 PE）继续兼容放行；真实 PE 负载在 Windows 下按 process.arch 保底 fail-closed。
    * @param {string} payloadFile
-   * @returns {string | null} 不匹配时返回本地化错误提示，匹配或无法探测主程序架构时返回 null
+   * @returns {string | null} 不匹配时返回本地化错误提示，匹配或纯测试桩夹具时返回 null
    */
   checkPayloadArch(payloadFile) {
-    const targetArch = this.resolveTargetArch();
-    if (!targetArch) return null;
     const payloadArch = readPeArch(payloadFile);
+    let targetArch = this.resolveTargetArch();
+    if (!targetArch) {
+      if (!payloadArch) return null;
+      if (process.platform === "win32") {
+        targetArch = process.arch === "arm64" ? "arm64"
+          : process.arch === "x64" ? "x64"
+          : process.arch === "ia32" ? "x86"
+          : "unknown";
+      } else {
+        return null;
+      }
+    }
     if (!payloadArch || payloadArch !== targetArch) {
       return this.t("guard.archMismatch", {
         payloadArch: payloadArch || "unknown",
@@ -106,9 +117,9 @@ class PatchGuard {
   deployAcpWrapper() {
     const s = this.checkAcpWrapper();
     if (!s.payloadAvailable) return { ok: false, error: this.t("acp.noPayload") };
-    if (s.upToDate) return { ok: true, changed: false, path: s.path };
     const archError = this.checkPayloadArch(this.payloadAcpWrapper);
     if (archError) return { ok: false, error: archError };
+    if (s.upToDate) return { ok: true, changed: false, path: s.path };
     try {
       atomicCopy(this.payloadAcpWrapper, this.acpWrapperPath, this.t);
       return { ok: true, changed: true, path: s.path };

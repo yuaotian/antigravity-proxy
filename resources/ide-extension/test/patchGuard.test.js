@@ -252,3 +252,22 @@ test("架构校验：deployAcpWrapper 与 restore 均拦截错架构 agy-acp-pro
   assert.match(restoreRes.error, /x64/);
   assert.equal(fs.existsSync(f.guard.acpWrapperPath), false);
 });
+
+test("架构校验：deployAcpWrapper 在目标已有同哈希错架构包装器时仍拒绝放行", () => {
+  const f = archFixture({ exeArch: "arm64", dllArch: "arm64", acpArch: "x64", lang: "zh-cn" });
+  fs.writeFileSync(f.guard.acpWrapperPath, makePeStub("x64"));
+  assert.equal(f.guard.checkAcpWrapper().upToDate, true);
+  const res = f.guard.deployAcpWrapper();
+  assert.equal(res.ok, false);
+  assert.match(/** @type {any} */ (res).error, /x64/);
+  assert.match(/** @type {any} */ (res).error, /arm64/);
+});
+
+test("架构校验：exePath 缺失时真实 PE 负载在 Windows 上按 process.arch 保底拦截错架构", { skip: process.platform !== "win32" }, () => {
+  const mismatchDllArch = process.arch === "arm64" ? "x64" : "arm64";
+  const f = archFixture({ exeArch: undefined, dllArch: mismatchDllArch, lang: "zh-cn" });
+  const r = f.guard.restore();
+  assert.equal(r.ok, false);
+  assert.match(r.error, new RegExp(mismatchDllArch));
+  assert.equal(fs.existsSync(f.info.dllPath), false);
+});
