@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  Antigravity-Proxy 编译脚本
 #  PowerShell Build Script for Windows
 # ============================================================
@@ -374,6 +374,19 @@ if (-not $acpProxyPath) {
 }
 Copy-Item $acpProxyPath.FullName -Destination (Join-Path $CliOutputDir "agy-acp-proxy.exe") -Force
 Write-Success "ACP 启动包装器 agy-acp-proxy.exe 已复制到 output\cli"
+
+# ARM64 构建使用 Microsoft Detours (MIT)：在输出目录附带 MIT 声明并清理非 ARM64 残留
+$detoursLicenseSrc = Join-Path $PSScriptRoot "third_party\detours\LICENSE.md"
+$detoursLicenseOut = Join-Path $OutputDir "THIRD_PARTY_DETOURS_LICENSE.md"
+if ($Arch -eq "arm64") {
+    if (-not (Test-Path -LiteralPath $detoursLicenseSrc -PathType Leaf)) {
+        Write-Error "缺少 Microsoft Detours 许可证文件: $detoursLicenseSrc"
+        exit 1
+    }
+    Copy-Item -LiteralPath $detoursLicenseSrc -Destination $detoursLicenseOut -Force
+} elseif (Test-Path -LiteralPath $detoursLicenseOut) {
+    Remove-Item -LiteralPath $detoursLicenseOut -Force
+}
 
 # ============================================================
 # 步骤 8: 生成配置文件
@@ -821,6 +834,13 @@ if (Test-Path $extSrc) {
     if (-not (Test-Path $acpPayloadSrc)) { throw "VSIX 载荷缺失: $acpPayloadSrc" }
     Copy-Item -LiteralPath $acpPayloadSrc -Destination $payloadDir -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "LICENSE.txt") -Destination (Join-Path $extRoot "LICENSE.txt") -Force
+    if ($Arch -eq "arm64") {
+        if (-not (Test-Path -LiteralPath $detoursLicenseSrc -PathType Leaf)) {
+            Write-Error "缺少 Microsoft Detours 许可证文件: $detoursLicenseSrc"
+            exit 1
+        }
+        Copy-Item -LiteralPath $detoursLicenseSrc -Destination (Join-Path $extRoot "THIRD_PARTY_DETOURS_LICENSE.md") -Force
+    }
 
     # 4) 版本号：插件要求 semver（2.5 → 2.5.0）
     $extVersion = if ($ExtensionVersion) { $ExtensionVersion } elseif ($Version -match '^\d+\.\d+$') { "$Version.0" } else { $Version }
