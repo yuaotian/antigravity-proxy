@@ -92,7 +92,7 @@ Antigravity-Proxy is a proxy patch (DLL) that works once you put it in the Antig
 
 ### Option 1: Antigravity IDE Marketplace (recommended)
 
-For Antigravity IDE, install the extension from Open VSX first:
+For **x64** Antigravity IDE, install the extension from Open VSX first:
 
 - [Antigravity Proxy on Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy)
 - Search for `Antigravity Proxy` in the Extensions view, or run:
@@ -102,6 +102,8 @@ For Antigravity IDE, install the extension from Open VSX first:
 ```
 
 Reload the IDE window after installation. The extension restores `version.dll` on its first start. If the marketplace search does not find it, use the VSIX / CLI fallback in the "Antigravity IDE Extension" section; if that still fails, use the online script below.
+
+> **Architecture note**: Open VSX currently distributes the **x64** VSIX package. For native **Windows ARM64** or 32-bit **x86** Antigravity IDE, use Option 2 (online install script) or download `*-ide-extension-win-arm64.vsix` / `*-win-x86.vsix` from [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) (the extension checks executable architecture before restoring `version.dll` and refuses mismatched writes).
 
 ### Option 2: Online install script (desktop / CLI / extension fallback)
 
@@ -129,13 +131,13 @@ To pass parameters, add them at the end of the command, e.g. `... install-online
 
 ### Option 3: Download a release package
 
-Download from [Releases](https://github.com/yuaotian/antigravity-proxy/releases) (choose `x86` for 32-bit programs, `arm64` for Windows on ARM64):
+Download from [Releases](https://github.com/yuaotian/antigravity-proxy/releases) matching your **target executable architecture** (`x64` for 64-bit x64, `x86` for 32-bit programs, `arm64` for native Windows on ARM64; `arm64` packages also include Microsoft Detours' MIT license in `THIRD_PARTY_DETOURS_LICENSE.md`):
 
 | File | For |
 |:--|:--|
-| `antigravity-proxy-vX-ide-win-x64.zip` | Antigravity IDE (`Antigravity IDE.exe`), Antigravity desktop (`Antigravity.exe`) |
-| `antigravity-proxy-vX-cli-win-x64.zip` | Antigravity CLI (`agy.exe`) |
-| `antigravity-proxy-vX-ide-extension-win-x64.vsix` | IDE companion extension (already included in `ide/` of the IDE package) |
+| `antigravity-proxy-vX-ide-win-<arch>.zip` | Antigravity IDE (`Antigravity IDE.exe`), Antigravity desktop (`Antigravity.exe`) |
+| `antigravity-proxy-vX-cli-win-<arch>.zip` | Antigravity CLI (`agy.exe`) |
+| `antigravity-proxy-vX-ide-extension-win-<arch>.vsix` | IDE companion extension (`x64` / `x86` / `arm64`, each bundling matching `version.dll`; already included in `ide/` of the IDE package) |
 | `SHA256SUMS.txt` | Checksum list |
 
 **Extract it outside the install directory** (e.g. `%LOCALAPPDATA%\antigravity-proxy\`); you will need these files later to repair the patch. Then pick one:
@@ -176,9 +178,9 @@ Restart the app after deployment.
 
 Reload the IDE window after installation; the extension restores `version.dll` on its first start.
 
-**If search does not find it / install fails:**
+**If search does not find it / install fails (or on native ARM64 / x86 IDE):**
 
-1. Download the VSIX from [Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy) or [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases);
+1. Download the matching-architecture VSIX from [Open VSX](https://open-vsx.org/extension/yuaotian/antigravity-proxy) (`x64` only) or [GitHub Releases](https://github.com/yuaotian/antigravity-proxy/releases) (`win-x64` / `win-x86` / `win-arm64`);
 2. Extensions view → `…` → "Install from VSIX..."; or:
 
 ```powershell
